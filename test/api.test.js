@@ -52,7 +52,7 @@ const DEMO = {
 };
 async function signIn(clinicName, role = 'admin') {
   const d = DEMO[clinicName];
-  const res = await fetch(`${base}/api/auth/clinic/${d.slug}/login`, {
+  const res = await fetch(`${base}/api/auth/login`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ username: d[role], password: d.password }),
   });

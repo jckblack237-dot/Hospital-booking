@@ -14,7 +14,7 @@ A working two-sided healthcare queue platform, plus the product documentation it
 ```bash
 npm install
 npm start          # http://localhost:3000
-npm test           # 60 tests: engine calibration, API, cross-clinic isolation, sign-in
+npm test           # 61 tests: engine calibration, API, cross-clinic isolation, sign-in
 ```
 
 The database seeds itself on first boot with a Malé clinic, an atoll clinic, ten doctors,
@@ -23,7 +23,7 @@ three weeks of history, and today's evening sessions.
 | | |
 |---|---|
 | Marketing site | <http://localhost:3000/> |
-| Clinic dashboard | Each clinic has its own address — see **Sign-ins** below |
+| Clinic dashboard | <http://localhost:3000/clinic/> — see **Sign-ins** below |
 | Patient app | <http://localhost:3000/app/> |
 | Partner API | `http://localhost:3000/v1` (`pk_demo_dhoni` / `sk_demo_dhoni_secret`) |
 
@@ -38,14 +38,18 @@ a three-hour clinic session is watchable in a few minutes. Notification debounce
 
 ## Sign-ins
 
-Every clinic has **its own sign-in address**, and nothing lists clinics or staff:
+One sign-in form, at `/clinic/`: username and password. **Usernames are unique across the whole
+platform**, so a username alone says which clinic you belong to — there is nothing to choose, and
+nothing lists clinics or staff.
 
-| Clinic | Address | Demo accounts | Password |
-|---|---|---|---|
-| Malé Family Clinic | <http://localhost:3000/clinic/male-family-clinic/> | `shaira`, `nazima` (reception) · `ahmed.zahir` (admin) · `ismail` (billing) | `lagoon-2026` |
-| Naifaru Health Centre | <http://localhost:3000/clinic/naifaru-health-centre/> | `hawwa` (reception) · `mohamed.latheef` (admin) | `reef-2026` |
+| Clinic | Demo accounts | Password |
+|---|---|---|
+| Malé Family Clinic | `shaira`, `nazima` (reception) · `ahmed.zahir` (admin) · `ismail` (billing) | `lagoon-2026` |
+| Naifaru Health Centre | `hawwa` (reception) · `mohamed.latheef` (admin) | `reef-2026` |
 
-Each person has their own username and password (scrypt-hashed, per-account salt). Five failed
+Each clinic also has an optional address of its own — `/clinic/male-family-clinic/` — which brands
+the page with the clinic's name and accepts only that clinic's accounts; handy as a bookmark on the
+reception tablet, never required. Passwords are scrypt-hashed with a per-account salt. Five failed
 attempts lock the account for five minutes. Admins issue sign-ins to their own team from
 Settings → Your team: a generated password is shown once, and the new person must change it on
 first sign-in. Switching an account off ends its sessions immediately.
@@ -55,12 +59,12 @@ first sign-in. Switching an account off ends its sessions immediately.
 ```bash
 npm run provision -- --name "Hulhumalé Medical" --island Hulhumale --atoll K \
                      --admin "Aishath Nadha" --username aishath.nadha
-#   Sign in:   http://localhost:3000/clinic/hulhumal-medical/
+#   Sign in:   http://localhost:3000/clinic/hulhumal-medical/   (or just /clinic/)
 #   Admin:     aishath.nadha
 #   Password:  coral-tide-47   (shown once)
 ```
 
-The demo credentials above are stored on the seeded clinics and shown on their sign-in pages only
+The demo credentials above are stored on the seeded clinics and offered by the sign-in page only
 while `VAGUTHU_DEMO` is not `false`; they never appear in any other response.
 
 ## Each clinic is its own CRM
@@ -68,7 +72,7 @@ while `VAGUTHU_DEMO` is not `false`; they never appear in any other response.
 Two clinics are seeded — Malé Family Clinic and Naifaru Health Centre — and they cannot see each
 other. This is enforced, not assumed:
 
-- Staff sign in to **one clinic, at its own address**. The tenant comes from the signed-in session
+- Staff sign in as **themselves**; the tenant comes from the signed-in session
   and from nothing else: there is no `clinicId` parameter on any clinic route, and one in a query
   string or body is ignored (`server/routes/clinic.js`, `server/services/tenancy.js`).
 - Every entity route checks ownership **before** reading — and a miss is a 404, not a 403, because
@@ -79,8 +83,9 @@ other. This is enforced, not assumed:
 - Only admins can change settings or partner access. Sign-out invalidates the session immediately.
 
 `test/tenancy.test.js` signs in as both clinics and tries every route against the other's
-sessions, tokens, patients, invoices, claims and settings — and checks that a clinic's credentials
-work only at its own address, that lockout works, and that no response carries a hash or a password. In production the same rules would also
+sessions, tokens, patients, invoices, claims and settings — and checks that a username resolves to
+its own clinic, that a clinic's optional address accepts only its accounts, that lockout works, and
+that no response carries a hash or a password. In production the same rules would also
 be in Postgres row-level security; here they live in one middleware so no route can forget them.
 For clinics that need physical separation (data residency, A6), the server runs one-per-clinic
 with its own database directory: `VAGUTHU_DATA_DIR=/data/clinic-a PORT=3001 npm start`.
@@ -148,7 +153,7 @@ web/
   clinic/          receptionist board · doctor module · patients · billing · analytics · messages · settings
   app/             patient app — discovery · live tracker · wallet · alerts
   shared/          design tokens · UI components · DOM and API helpers
-test/              engine.test.js (19) · api.test.js (21) · tenancy.test.js (20)
+test/              engine.test.js (19) · api.test.js (21) · tenancy.test.js (21)
 docs/              the PRDs and specifications this was built from
 ```
 

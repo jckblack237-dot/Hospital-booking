@@ -1,15 +1,26 @@
 /**
- * Clinic staff sign-in. Each clinic has its own sign-in address and nothing
- * is listed: no clinics, no staff. You reach your clinic's page by its link.
+ * Clinic staff sign-in. One form: username and password. The clinic follows
+ * from the account. Nothing is listed — no clinics, no staff — except the
+ * seeded demo sign-ins, and those only in demo mode.
  */
 import express from 'express';
 import { asyncRoute, HttpError, parse } from '../lib/util.js';
-import { login, logout, requireStaff, clinicBySlug, changeOwnPassword } from '../services/tenancy.js';
+import { login, logout, requireStaff, clinicBySlug, changeOwnPassword, demoCredentials } from '../services/tenancy.js';
 import { db } from '../db.js';
 
 export const router = express.Router();
 
-/** The one thing a sign-in page needs: this clinic's name. Demo credentials only in demo mode. */
+/** The sign-in page needs nothing. In demo mode it may show the seeded sign-ins. */
+router.get('/sign-in', asyncRoute((req, res) => {
+  res.json({ demo: demoCredentials() });
+}));
+
+router.post('/login', asyncRoute((req, res) => {
+  const { username, password } = req.body || {};
+  res.json(login({ username, password, ip: req.ip }));
+}));
+
+/** Optional: a clinic's own address, which shows its name and accepts only its accounts. */
 router.get('/clinic/:slug', asyncRoute((req, res) => {
   const clinic = clinicBySlug(req.params.slug);
   if (!clinic) throw HttpError.notFound('Clinic');

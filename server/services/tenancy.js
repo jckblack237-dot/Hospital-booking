@@ -10,7 +10,8 @@
  *     because confirming that another clinic's record exists is itself a leak.
  *  3. A clinic can only see patients recorded in `clinic_patients` for it.
  *  4. Nothing about a clinic — its existence, its staff — is enumerable
- *     before sign-in. A clinic's sign-in page is reached by its own address.
+ *     before sign-in. You sign in with your own username; the clinic follows
+ *     from the account. A clinic's own address (/clinic/<slug>/) is optional.
  *
  * The reference architecture puts rule 2 in Postgres row-level security as
  * well; here it is enforced in one place so that no route can forget it.
@@ -52,24 +53,31 @@ export function clinicBySlug(slug) {
   return db.prepare('SELECT id, name, island, atoll, slug, settings FROM clinics WHERE slug = ?').get(slug);
 }
 
-function attemptKey(clinicId, username, ip) {
-  return `${clinicId}:${username.toLowerCase()}:${ip || ''}`;
+function attemptKey(username, ip) {
+  return `${username.toLowerCase()}:${ip || ''}`;
 }
 
-export function login({ slug, username, password, ip }) {
-  const clinic = clinicBySlug(slug);
+/**
+ * Sign in with a username and password. The clinic is a property of the
+ * account, so there is nothing to choose. A clinic's own address (`slug`) is
+ * optional: when given, only that clinic's accounts are accepted there.
+ */
+export function login({ slug = null, username, password, ip }) {
   // The same answer whether the clinic, the user or the password is wrong.
   const reject = () => HttpError.unauthorized('Wrong username or password');
-  if (!clinic || !username) throw reject();
+  if (!username) throw reject();
+  const clinic = slug ? clinicBySlug(slug) : null;
+  if (slug && !clinic) throw reject();
 
-  const key = attemptKey(clinic.id, username, ip);
+  const key = attemptKey(username, ip);
   const attempt = db.prepare('SELECT * FROM login_attempts WHERE key = ?').get(key);
   if (attempt?.locked_until && attempt.locked_until > Date.now()) {
     throw new HttpError(429, 'locked', 'Too many attempts', `Try again in ${Math.ceil((attempt.locked_until - Date.now()) / 60000)} minutes`);
   }
 
-  const staff = db.prepare('SELECT * FROM staff WHERE clinic_id = ? AND LOWER(username) = LOWER(?)').get(clinic.id, username);
-  const ok = staff && staff.active && verifyPassword(password, staff.password_hash, staff.password_salt);
+  const staff = db.prepare('SELECT * FROM staff WHERE LOWER(username) = LOWER(?)').get(username);
+  const ok = staff && staff.active && (!clinic || staff.clinic_id === clinic.id)
+    && verifyPassword(password, staff.password_hash, staff.password_salt);
   if (!ok) {
     const failures = (attempt?.failures ?? 0) + 1;
     db.prepare(`INSERT INTO login_attempts (key, failures, locked_until) VALUES (?,?,?)
@@ -81,13 +89,14 @@ export function login({ slug, username, password, ip }) {
 
   const token = crypto.randomBytes(24).toString('base64url');
   const at = now();
+  const home = db.prepare('SELECT id, name, island, atoll, slug FROM clinics WHERE id = ?').get(staff.clinic_id);
   db.prepare('INSERT INTO staff_sessions (token, staff_id, clinic_id, created_at, expires_at, last_seen_at) VALUES (?,?,?,?,?,?)')
-    .run(token, staff.id, clinic.id, at, at + SESSION_TTL_MS, at);
+    .run(token, staff.id, home.id, at, at + SESSION_TTL_MS, at);
   db.prepare('UPDATE staff SET last_login_at = ? WHERE id = ?').run(at, staff.id);
   return {
     token,
     staff: { id: staff.id, name: staff.name, role: staff.role, username: staff.username, mustChangePassword: !!staff.must_change_password },
-    clinic: { id: clinic.id, name: clinic.name, island: clinic.island, atoll: clinic.atoll, slug: clinic.slug },
+    clinic: home,
   };
 }
 
@@ -128,8 +137,10 @@ export function createStaff({ clinicId, name, role, username, password }) {
   if (!name || !username) throw HttpError.badRequest('name and username are required');
   if (!['receptionist', 'admin', 'billing', 'doctor'].includes(role)) throw HttpError.badRequest('role must be receptionist, admin, billing or doctor');
   if (!/^[a-z0-9._-]{3,32}$/i.test(username)) throw HttpError.badRequest('username: 3–32 letters, digits, dots, dashes or underscores');
-  if (db.prepare('SELECT 1 FROM staff WHERE clinic_id = ? AND LOWER(username) = LOWER(?)').get(clinicId, username)) {
-    throw HttpError.conflict('username_taken', 'That username is already used at this clinic');
+  // Usernames are unique across the whole platform: a username identifies one
+  // person at one clinic, which is what lets sign-in skip "which clinic?".
+  if (db.prepare('SELECT 1 FROM staff WHERE LOWER(username) = LOWER(?)').get(username)) {
+    throw HttpError.conflict('username_taken', 'That username is already taken — try firstname.lastname');
   }
   const initial = password || generatePassword();
   const { hash, salt } = hashPassword(initial);
@@ -194,6 +205,19 @@ export function own(kind, id, clinicId) {
 export function linkPatient(clinicId, patientId) {
   db.prepare('INSERT OR IGNORE INTO clinic_patients (clinic_id, patient_id, first_seen_at) VALUES (?,?,?)')
     .run(clinicId, patientId, now());
+}
+
+/** Demo mode only: the seeded sign-ins, so the one sign-in page can show them. */
+export function demoCredentials() {
+  if (process.env.VAGUTHU_DEMO === 'false') return null;
+  const rows = db.prepare('SELECT name, slug, settings FROM clinics ORDER BY rowid').all();
+  const out = [];
+  for (const c of rows) {
+    let settings = {};
+    try { settings = JSON.parse(c.settings || '{}'); } catch { /* ignore */ }
+    if (settings.demoCredentials) out.push({ clinic: c.name, slug: c.slug, ...settings.demoCredentials });
+  }
+  return out.length ? out : null;
 }
 
 // ------------------------------------------------------------ provisioning

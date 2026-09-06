@@ -39,9 +39,9 @@ let socket;
 let poll;
 
 // ----------------------------------------------------------------- session
-/** The clinic is named by its own address: /clinic/<slug>/ */
+/** Optional: a clinic's own address, /clinic/<slug>/, brands the sign-in page and accepts only its accounts. */
 export const slug = (location.pathname.match(/^\/clinic\/([a-z0-9-]+)/) || [])[1] || null;
-const SESSION_KEY = `vaguthu-clinic-session:${slug}`;
+const SESSION_KEY = 'vaguthu-clinic-session';
 
 function loadSession() {
   try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; }
@@ -74,55 +74,57 @@ export async function call(fn) {
 }
 
 // ------------------------------------------------------------------- login
-/** No clinic in the address: nothing to list. Ask for the clinic's own link. */
-function findClinicScreen() {
-  const input = h('input.input', { placeholder: 'e.g. male-family-clinic', autofocus: true });
-  const go = () => {
-    const v = input.value.trim().toLowerCase().replace(/^.*\/clinic\//, '').replace(/\/.*$/, '');
-    if (v) location.href = `/clinic/${v}/`;
-  };
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
-  return h('div.login', {}, h('div.box.stack', {},
-    h('h1', {}, 'Which clinic?'),
-    h('p.lede', {}, 'Every clinic has its own sign-in address — Vaguthu gave it to your clinic admin when the clinic was set up. Paste the link, or type the clinic code from it.'),
-    h('label.field', {}, h('span', {}, 'Clinic link or code'), input),
-    h('button.btn.primary.lg.block', { onClick: go }, 'Continue'),
-    h('div.help', {}, 'Clinics are not listed here. If you do not have your link, ask your clinic admin.')));
-}
-
+/**
+ * One sign-in form. Your username says who you are; the clinic follows from
+ * that. Nothing is listed. A clinic's own address, if used, only brands the
+ * page and narrows it to that clinic's accounts.
+ */
 function loginScreen() {
   const root = h('div.login');
-  const username = h('input.input', { placeholder: 'Username', autocomplete: 'username', autofocus: true, autocapitalize: 'none' });
+  const username = h('input.input', { placeholder: 'e.g. shaira', autocomplete: 'username', autofocus: true, autocapitalize: 'none' });
   const password = h('input.input', { placeholder: 'Password', type: 'password', autocomplete: 'current-password' });
   let clinic = null;
+  let demo = null;
 
   const submit = () => guard(async () => {
-    const session = await api(`/api/auth/clinic/${slug}/login`, { method: 'POST', body: { username: username.value.trim(), password: password.value } });
+    const session = await api(slug ? `/api/auth/clinic/${slug}/login` : '/api/auth/login', {
+      method: 'POST', body: { username: username.value.trim(), password: password.value },
+    });
     saveSession(session);
     await boot(session);
   });
   for (const el of [username, password]) el.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
 
+  const demoBlock = (d) => h('div', { style: { marginBottom: '8px' } },
+    h('div', { style: { fontWeight: 700 } }, d.clinic),
+    d.users.map((u) => h('div', {}, h('span.mono', {}, u.username), ` — ${u.name}, ${u.role}`)),
+    h('div', {}, 'Password: ', h('span.mono', {}, d.password)));
+
   const draw = () => mount(root, h('div.box.stack', {},
-    h('div.crumb', {}, h('span', {}, `/clinic/${slug}/`)),
+    slug ? h('div.crumb', {}, h('span', {}, `/clinic/${slug}/`)) : null,
     h('h1', {}, clinic ? clinic.name : 'Sign in'),
     h('p.lede', {}, clinic
-      ? `${clinic.island}, ${clinic.atoll} Atoll. This page belongs to this clinic only.`
-      : 'Loading your clinic…'),
+      ? `${clinic.island}, ${clinic.atoll} Atoll. Only this clinic's accounts work here.`
+      : 'Your username is yours alone, and it already knows which clinic you belong to.'),
     h('label.field', {}, h('span', {}, 'Username'), username),
     h('label.field', {}, h('span', {}, 'Password'), password),
     h('button.btn.primary.lg.block', { onClick: submit }, 'Sign in'),
-    clinic?.demo ? h('div.help', {},
-      h('div', { style: { fontWeight: 700, marginBottom: '4px' } }, 'Demo sign-ins for this clinic'),
-      clinic.demo.users.map((u) => h('div', {}, h('span.mono', {}, u.username), ` — ${u.name}, ${u.role}`)),
-      h('div', { style: { marginTop: '4px' } }, 'Password for all of them: ', h('span.mono', {}, clinic.demo.password))) : null));
+    demo ? h('details.help', {},
+      h('summary', { style: { cursor: 'pointer', fontWeight: 700 } }, 'Demo sign-ins'),
+      h('div', { style: { marginTop: '8px' } },
+        (Array.isArray(demo) ? demo : [demo]).map(demoBlock),
+        h('div.dim', {}, 'Shown only while the server runs in demo mode.'))) : null));
 
-  api(`/api/auth/clinic/${slug}`)
-    .then((c) => { clinic = c; draw(); })
-    .catch(() => mount(root, h('div.box.stack', {},
-      h('h1', {}, 'No clinic at this address'),
-      h('p.lede', {}, `There is no clinic at /clinic/${slug}/. Check the link your clinic admin gave you.`),
-      h('a.btn', { href: '/clinic/' }, 'Try another'))));
+  if (slug) {
+    api(`/api/auth/clinic/${slug}`)
+      .then((c) => { clinic = c; demo = c.demo ? { clinic: c.name, ...c.demo } : null; draw(); })
+      .catch(() => mount(root, h('div.box.stack', {},
+        h('h1', {}, 'No clinic at this address'),
+        h('p.lede', {}, `There is no clinic at /clinic/${slug}/. You can sign in without it.`),
+        h('a.btn.primary', { href: '/clinic/' }, 'Go to sign-in'))));
+  } else {
+    api('/api/auth/sign-in').then((d) => { demo = d.demo; draw(); }).catch(() => {});
+  }
   draw();
   return root;
 }
@@ -168,7 +170,7 @@ function sidebar() {
     h('div.clinic', {},
       h('div.name', {}, state.clinic.name),
       h('div.where', {}, `${state.clinic.island}, ${state.clinic.atoll} Atoll`),
-      h('div.yours', { title: `Sign-in address: /clinic/${slug}/` }, '🔒 Your clinic only')),
+      h('div.yours', { title: `Your clinic's own address: /clinic/${state.clinic.slug}/` }, '🔒 Your clinic only')),
     h('nav', {}, TABS.map(([key, label, ico], i) =>
       h('button', {
         'aria-current': state.tab === key ? 'page' : null,
@@ -241,7 +243,6 @@ function view() {
 
 export function render() {
   const root = document.getElementById('root');
-  if (!slug) { mount(root, findClinicScreen()); return; }
   if (!state.session) { mount(root, loginScreen()); return; }
   if (state.staff?.mustChangePassword) { mount(root, changePasswordScreen()); return; }
   const isBoard = state.tab === 'board';
@@ -290,7 +291,7 @@ async function boot(session) {
   render();
 }
 
-const saved = slug ? loadSession() : null;
+const saved = loadSession();
 if (saved?.token) {
   boot(saved).catch(() => { saveSession(null); state.session = null; render(); });
 } else {

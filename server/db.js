@@ -29,8 +29,10 @@ CREATE TABLE IF NOT EXISTS staff (
   username TEXT NOT NULL, password_hash TEXT NOT NULL, password_salt TEXT NOT NULL,
   active INTEGER NOT NULL DEFAULT 1, must_change_password INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER, last_login_at INTEGER,
-  UNIQUE (clinic_id, username)
+  UNIQUE (username)                               -- one username, one person, one clinic — platform-wide
 );
+
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 
 CREATE TABLE IF NOT EXISTS login_attempts (
   key TEXT PRIMARY KEY, failures INTEGER NOT NULL DEFAULT 0, locked_until INTEGER
@@ -267,18 +269,20 @@ CREATE TABLE IF NOT EXISTS notification_log (
 `;
 db.exec(SCHEMA);
 
-// A database from before per-clinic sign-in has a PIN column and no slug.
-// It cannot be upgraded in place without inventing passwords, so it is
-// reset: this is demo data, and the seed rebuilds it on the next start.
-const staffCols = db.prepare('PRAGMA table_info(staff)').all().map((c) => c.name);
-if (staffCols.includes('pin')) {
-  console.warn('[db] staff table predates per-clinic sign-in — resetting demo database');
+// Demo databases are not migrated, they are rebuilt: an older layout (the
+// PIN era, or per-clinic usernames) is dropped and the seed recreates it on
+// the next start. A real deployment would carry migrations here instead.
+const SCHEMA_VERSION = '3';
+const stored = (() => { try { return db.prepare("SELECT value FROM meta WHERE key = 'schema'").get()?.value; } catch { return null; } })();
+if (stored !== SCHEMA_VERSION) {
+  if (stored !== undefined && stored !== null) console.warn(`[db] schema ${stored} → ${SCHEMA_VERSION}: resetting demo database`);
   db.exec('PRAGMA foreign_keys = OFF');
   for (const row of db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all()) {
     db.exec(`DROP TABLE IF EXISTS "${row.name}"`);
   }
   db.exec('PRAGMA foreign_keys = ON');
   db.exec(SCHEMA);
+  db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema', ?)").run(SCHEMA_VERSION);
 }
 
 export function tx(fn) {

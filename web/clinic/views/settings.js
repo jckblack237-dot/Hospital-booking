@@ -101,8 +101,8 @@ export function renderSettings() {
       h('div.card.pad', {},
         h('div.section-title', { style: { marginTop: 0 } }, 'Your team'),
         h('div.help', { style: { marginBottom: '6px' } },
-          'Everyone who can sign in at ', h('span.mono', {}, data.signInPath),
-          '. Each person has their own username and password. Admins can add people, reset a password, or switch an account off.'),
+          'Everyone who can sign in to this clinic. Each person has their own username and password — the username alone says which clinic they belong to. ',
+          'Admins can add people, reset a password, or switch an account off. Optional clinic address for a bookmark: ', h('span.mono', {}, data.signInPath), '.'),
         (data.staff || []).map((m) => h('div.spread', { style: { padding: '7px 0', borderTop: '1px solid var(--border)' } },
           h('span', {}, h('div', { style: { fontWeight: 700, opacity: m.active ? 1 : .5 } }, m.name),
             h('div.tiny.dim', {}, h('span.mono', {}, m.username), ` · ${m.role}`, m.must_change_password ? ' · must change password' : '', m.active ? '' : ' · switched off')),
@@ -125,7 +125,7 @@ export function renderSettings() {
             h('button.btn.primary.sm', {
               onClick: () => guard(async () => {
                 const r = await api('/api/clinic/staff', { method: 'POST', body: { name: newName.value.trim(), username: newUser.value.trim(), role: newRole.value } });
-                alert(`${r.staff.name} can now sign in at ${data.signInPath}\n\nUsername: ${r.staff.username}\nPassword: ${r.password}\n\nShown once. They will be asked to change it.`);
+                alert(`${r.staff.name} can now sign in.\n\nUsername: ${r.staff.username}\nPassword: ${r.password}\n\nShown once. They will be asked to change it.`);
                 newName.value = ''; newUser.value = '';
                 data = null; await load();
               }),

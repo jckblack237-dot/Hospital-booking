@@ -24,7 +24,7 @@ const DEMO = {
 };
 async function signIn(clinicName, role = 'admin') {
   const d = DEMO[clinicName];
-  const { body } = await call('POST', `/api/auth/clinic/${d.slug}/login`, null, { username: d[role], password: d.password });
+  const { body } = await call('POST', '/api/auth/login', null, { username: d[role], password: d.password });
   return { clinic: body.clinic, token: body.token };
 }
 
@@ -65,23 +65,37 @@ test('clinics and staff cannot be listed before signing in', async () => {
   const page = await call('GET', '/api/auth/clinic/male-family-clinic');
   assert.equal(page.status, 200);
   assert.ok(!('id' in page.body) && !('staff' in page.body), 'the sign-in page gets a name, not identities');
+  const signIn = await call('GET', '/api/auth/sign-in');
+  assert.equal(signIn.status, 200);
+  assert.deepEqual(Object.keys(signIn.body), ['demo'], 'the sign-in page itself needs nothing but the demo list');
   assert.equal((await call('GET', '/api/auth/clinic/some-other-clinic')).status, 404);
 });
 
-test("each clinic's sign-in works only at its own address", async () => {
-  // Malé credentials at the Naifaru address: rejected, and indistinguishable from a bad password.
+test('a username alone says which clinic you belong to', async () => {
+  const male = await call('POST', '/api/auth/login', null, { username: 'shaira', password: 'lagoon-2026' });
+  assert.equal(male.status, 200);
+  assert.equal(male.body.clinic.name, "Male' Family Clinic");
+  const island = await call('POST', '/api/auth/login', null, { username: 'hawwa', password: 'reef-2026' });
+  assert.equal(island.status, 200);
+  assert.equal(island.body.clinic.name, 'Naifaru Health Centre');
+  // Usernames are case-insensitive; the clinic never had to be chosen.
+  assert.equal((await call('POST', '/api/auth/login', null, { username: 'SHAIRA', password: 'lagoon-2026' })).status, 200);
+});
+
+test("a clinic's own address, if used, accepts only its own accounts", async () => {
   const cross = await call('POST', '/api/auth/clinic/naifaru-health-centre/login', null, { username: 'shaira', password: 'lagoon-2026' });
   assert.equal(cross.status, 401);
   const wrong = await call('POST', '/api/auth/clinic/male-family-clinic/login', null, { username: 'shaira', password: 'reef-2026' });
   assert.equal(wrong.status, 401);
   assert.equal(cross.body.detail, wrong.body.detail, 'same answer whichever part was wrong');
+  assert.equal((await call('POST', '/api/auth/clinic/male-family-clinic/login', null, { username: 'shaira', password: 'lagoon-2026' })).status, 200);
 });
 
 test('repeated failures lock the account for a while', async () => {
   for (let i = 0; i < 5; i++) {
-    await call('POST', '/api/auth/clinic/male-family-clinic/login', null, { username: 'nazima', password: 'nope' });
+    await call('POST', '/api/auth/login', null, { username: 'nazima', password: 'nope' });
   }
-  const locked = await call('POST', '/api/auth/clinic/male-family-clinic/login', null, { username: 'nazima', password: 'lagoon-2026' });
+  const locked = await call('POST', '/api/auth/login', null, { username: 'nazima', password: 'lagoon-2026' });
   assert.equal(locked.status, 429, 'even the right password is refused while locked');
 });
 
@@ -101,30 +115,29 @@ test('an admin can issue a sign-in; the new person can use it; a receptionist ca
   assert.match(created.body.password, /^[a-z]+-[a-z]+-\d\d$/, 'a readable generated password, shown once');
   assert.ok(!('password_hash' in created.body.staff));
 
-  const first = await call('POST', '/api/auth/clinic/male-family-clinic/login', null, { username: 'mariyam.w', password: created.body.password });
+  const first = await call('POST', '/api/auth/login', null, { username: 'mariyam.w', password: created.body.password });
   assert.equal(first.status, 200);
   assert.equal(first.body.staff.mustChangePassword, true);
 
   const changed = await call('POST', '/api/auth/change-password', first.body.token, { currentPassword: created.body.password, newPassword: 'my-own-password-1' });
   assert.equal(changed.status, 200);
-  const again = await call('POST', '/api/auth/clinic/male-family-clinic/login', null, { username: 'mariyam.w', password: 'my-own-password-1' });
+  const again = await call('POST', '/api/auth/login', null, { username: 'mariyam.w', password: 'my-own-password-1' });
   assert.equal(again.status, 200);
   assert.equal(again.body.staff.mustChangePassword, false);
 
-  // Same username at the OTHER clinic is a different person entirely.
-  const other = await call('POST', '/api/clinic/staff', B.token, { name: 'Someone Else', username: 'mariyam.w', role: 'billing' });
-  assert.equal(other.status, 201);
-  const wrongClinic = await call('POST', '/api/auth/clinic/naifaru-health-centre/login', null, { username: 'mariyam.w', password: 'my-own-password-1' });
-  assert.equal(wrongClinic.status, 401);
+  // A username identifies one person on the whole platform, so the other
+  // clinic cannot create it — and therefore never needs to be chosen at sign-in.
+  const other = await call('POST', '/api/clinic/staff', B.token, { name: 'Someone Else', username: 'Mariyam.W', role: 'billing' });
+  assert.equal(other.status, 409);
 });
 
 test('switching an account off ends its sessions immediately', async () => {
   const created = await call('POST', '/api/clinic/staff', A.token, { name: 'Temp Desk', username: 'temp.desk', role: 'receptionist' });
-  const session = await call('POST', '/api/auth/clinic/male-family-clinic/login', null, { username: 'temp.desk', password: created.body.password });
+  const session = await call('POST', '/api/auth/login', null, { username: 'temp.desk', password: created.body.password });
   assert.equal((await call('GET', '/api/clinic/board', session.body.token)).status, 200);
   await call('POST', `/api/clinic/staff/${created.body.staff.id}/active`, A.token, { active: false });
   assert.equal((await call('GET', '/api/clinic/board', session.body.token)).status, 401);
-  const relogin = await call('POST', '/api/auth/clinic/male-family-clinic/login', null, { username: 'temp.desk', password: created.body.password });
+  const relogin = await call('POST', '/api/auth/login', null, { username: 'temp.desk', password: created.body.password });
   assert.equal(relogin.status, 401);
 });
 
@@ -134,7 +147,7 @@ test('a clinic cannot be left without an admin, and you cannot switch yourself o
   assert.equal((await call('POST', `/api/clinic/staff/${me.id}/active`, A.token, { active: false })).status, 400);
   if (admins.length === 1) {
     const created = await call('POST', '/api/clinic/staff', A.token, { name: 'Second Admin', username: 'second.admin', role: 'admin' });
-    const second = await call('POST', '/api/auth/clinic/male-family-clinic/login', null, { username: 'second.admin', password: created.body.password });
+    const second = await call('POST', '/api/auth/login', null, { username: 'second.admin', password: created.body.password });
     const r = await call('POST', `/api/clinic/staff/${created.body.staff.id}/active`, A.token, { active: false });
     assert.equal(r.status, 200, 'with two admins, one can be switched off');
     assert.equal((await call('GET', '/api/clinic/board', second.body.token)).status, 401);
@@ -146,7 +159,7 @@ test('provisioning gives a new clinic its own address and a first admin', async 
   const out = provisionClinic({ name: 'Hulhumalé Medical', island: 'Hulhumale', atoll: 'K', adminName: 'Aishath Nadha', adminUsername: 'aishath.nadha' });
   assert.equal(out.slug, 'hulhumal-medical', 'slug is derived from the name');
   assert.ok(out.signInPath.startsWith('/clinic/'));
-  const login = await call('POST', `/api/auth/clinic/${out.slug}/login`, null, { username: 'aishath.nadha', password: out.password });
+  const login = await call('POST', '/api/auth/login', null, { username: 'aishath.nadha', password: out.password });
   assert.equal(login.status, 200);
   assert.equal(login.body.clinic.name, 'Hulhumalé Medical');
   const board = await call('GET', '/api/clinic/board', login.body.token);
