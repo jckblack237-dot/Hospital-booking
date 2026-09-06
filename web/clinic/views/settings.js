@@ -22,6 +22,11 @@ export function renderSettings() {
   const p = data.penalty;
 
   const field = (label, node, hint) => h('label.field', {}, h('span', {}, label), node, hint ? h('div.tiny.dim', {}, hint) : null);
+  const isAdmin = state.staff.role === 'admin';
+  const newName = h('input.input', { placeholder: 'Full name', style: { maxWidth: '180px' } });
+  const newUser = h('input.input', { placeholder: 'username', autocapitalize: 'none', style: { maxWidth: '150px' } });
+  const newRole = h('select.input', { style: { maxWidth: '140px' } },
+    ['receptionist', 'admin', 'billing', 'doctor'].map((r) => h('option', { value: r }, r)));
 
   return h('div.grid.k2', {},
     h('div.card.pad', {},
@@ -95,9 +100,36 @@ export function renderSettings() {
 
       h('div.card.pad', {},
         h('div.section-title', { style: { marginTop: 0 } }, 'Your team'),
-        h('div.help', { style: { marginBottom: '8px' } }, 'Everyone who can sign in to this clinic. Only admins can change settings or partner access.'),
-        (data.staff || []).map((m) => h('div.spread', { style: { padding: '5px 0' } },
-          h('span', {}, m.name), h('span.pill', {}, m.role)))),
+        h('div.help', { style: { marginBottom: '6px' } },
+          'Everyone who can sign in at ', h('span.mono', {}, data.signInPath),
+          '. Each person has their own username and password. Admins can add people, reset a password, or switch an account off.'),
+        (data.staff || []).map((m) => h('div.spread', { style: { padding: '7px 0', borderTop: '1px solid var(--border)' } },
+          h('span', {}, h('div', { style: { fontWeight: 700, opacity: m.active ? 1 : .5 } }, m.name),
+            h('div.tiny.dim', {}, h('span.mono', {}, m.username), ` · ${m.role}`, m.must_change_password ? ' · must change password' : '', m.active ? '' : ' · switched off')),
+          isAdmin ? h('span.row', {},
+            h('button.btn.sm', {
+              onClick: () => guard(async () => {
+                const r = await api(`/api/clinic/staff/${m.id}/reset-password`, { method: 'POST' });
+                alert(`New password for ${m.name}:\n\n${r.password}\n\nShown once. They will be asked to change it.`);
+              }),
+            }, 'Reset password'),
+            m.id !== state.staff.id ? h('button.btn.sm.ghost', {
+              onClick: () => guard(async () => {
+                await api(`/api/clinic/staff/${m.id}/active`, { method: 'POST', body: { active: !m.active } });
+                data = null; await load();
+              }, m.active ? 'Account switched off' : 'Account switched on'),
+            }, m.active ? 'Switch off' : 'Switch on') : null) : null)),
+        isAdmin ? h('div', { style: { marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border)' } },
+          h('div', { style: { fontWeight: 700, marginBottom: '6px' } }, 'Add someone'),
+          h('div.row.wrap', {}, newName, newUser, newRole,
+            h('button.btn.primary.sm', {
+              onClick: () => guard(async () => {
+                const r = await api('/api/clinic/staff', { method: 'POST', body: { name: newName.value.trim(), username: newUser.value.trim(), role: newRole.value } });
+                alert(`${r.staff.name} can now sign in at ${data.signInPath}\n\nUsername: ${r.staff.username}\nPassword: ${r.password}\n\nShown once. They will be asked to change it.`);
+                newName.value = ''; newUser.value = '';
+                data = null; await load();
+              }),
+            }, 'Create sign-in'))) : null),
 
       h('div.card.pad', {},
         h('div.section-title', { style: { marginTop: 0 } }, 'Clinic'),

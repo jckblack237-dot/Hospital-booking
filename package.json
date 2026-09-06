@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Vaguthu — clinic queue platform for the Maldives. Clinic dashboard (B2B), patient app (B2C), partner API.",
+  "description": "Vaguthu \u2014 clinic queue platform for the Maldives. Clinic dashboard (B2B), patient app (B2C), partner API.",
   "engines": {
     "node": ">=20.11"
   },
@@ -11,7 +11,8 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "seed": "node server/seed.js --force",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "provision": "node server/provision.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1",

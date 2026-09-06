@@ -39,11 +39,15 @@ let socket;
 let poll;
 
 // ----------------------------------------------------------------- session
+/** The clinic is named by its own address: /clinic/<slug>/ */
+export const slug = (location.pathname.match(/^\/clinic\/([a-z0-9-]+)/) || [])[1] || null;
+const SESSION_KEY = `vaguthu-clinic-session:${slug}`;
+
 function loadSession() {
-  try { return JSON.parse(localStorage.getItem('vaguthu-clinic-session') || 'null'); } catch { return null; }
+  try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; }
 }
 function saveSession(s) {
-  try { s ? localStorage.setItem('vaguthu-clinic-session', JSON.stringify(s)) : localStorage.removeItem('vaguthu-clinic-session'); } catch { /* private mode */ }
+  try { s ? localStorage.setItem(SESSION_KEY, JSON.stringify(s)) : localStorage.removeItem(SESSION_KEY); } catch { /* private mode */ }
 }
 
 async function signOut() {
@@ -70,60 +74,77 @@ export async function call(fn) {
 }
 
 // ------------------------------------------------------------------- login
-function loginScreen() {
-  const view = { step: 'clinic', clinics: [], clinic: null, staff: [], member: null, pin: '' };
-  const root = h('div.login');
-
-  const draw = () => {
-    const crumb = h('div.crumb', {},
-      view.clinic ? h('button', { onClick: () => { view.step = 'clinic'; view.clinic = null; view.member = null; draw(); } }, 'Clinics') : null,
-      view.clinic ? h('span', {}, '›') : null,
-      view.clinic ? h('span', {}, view.clinic.name) : null,
-      view.member ? h('span', {}, '›') : null,
-      view.member ? h('span', {}, view.member.name) : null);
-
-    let body;
-    if (view.step === 'clinic') {
-      body = h('div.stack', {},
-        h('h1', {}, 'Sign in to your clinic'),
-        h('p.lede', {}, 'Each clinic is its own CRM. You only ever see your own patients, queue and billing.'),
-        view.clinics.map((c) => h('button.choice', {
-          onClick: async () => {
-            view.clinic = c;
-            view.staff = (await api(`/api/auth/clinics/${c.id}/staff`)).staff;
-            view.step = 'staff'; draw();
-          },
-        }, h('span.av', {}, c.name.split(' ').map((w) => w[0]).join('').slice(0, 2)),
-        h('span', {}, h('div.t', {}, c.name), h('div.s', {}, `${c.island}, ${c.atoll} Atoll`)))));
-    } else if (view.step === 'staff') {
-      body = h('div.stack', {}, crumb,
-        h('h1', {}, 'Who is at the desk?'),
-        h('p.lede', {}, 'Every action is recorded under your name.'),
-        view.staff.map((m) => h('button.choice', {
-          onClick: () => { view.member = m; view.step = 'pin'; draw(); },
-        }, h('span.av', {}, m.name.split(' ').map((w) => w[0]).join('').slice(0, 2)),
-        h('span', {}, h('div.t', {}, m.name), h('div.s', {}, m.role)))));
-    } else {
-      const pin = h('input.input.pin', { type: 'password', inputmode: 'numeric', maxlength: 6, autofocus: true, placeholder: '••••' });
-      const submit = () => guard(async () => {
-        const session = await api('/api/auth/login', { method: 'POST', body: { clinicId: view.clinic.id, staffId: view.member.id, pin: pin.value } });
-        saveSession(session);
-        await boot(session);
-      });
-      pin.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
-      body = h('div.stack', {}, crumb,
-        h('h1', {}, `Hello, ${view.member.name.split(' ')[0]}`),
-        h('p.lede', {}, 'Enter your PIN.'),
-        pin,
-        h('button.btn.primary.lg.block', { onClick: submit }, 'Sign in'),
-        h('div.help', { style: { textAlign: 'center' } }, 'Demo: every PIN is 1234.'));
-    }
-    mount(root, h('div.box', {}, body));
+/** No clinic in the address: nothing to list. Ask for the clinic's own link. */
+function findClinicScreen() {
+  const input = h('input.input', { placeholder: 'e.g. male-family-clinic', autofocus: true });
+  const go = () => {
+    const v = input.value.trim().toLowerCase().replace(/^.*\/clinic\//, '').replace(/\/.*$/, '');
+    if (v) location.href = `/clinic/${v}/`;
   };
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+  return h('div.login', {}, h('div.box.stack', {},
+    h('h1', {}, 'Which clinic?'),
+    h('p.lede', {}, 'Every clinic has its own sign-in address — Vaguthu gave it to your clinic admin when the clinic was set up. Paste the link, or type the clinic code from it.'),
+    h('label.field', {}, h('span', {}, 'Clinic link or code'), input),
+    h('button.btn.primary.lg.block', { onClick: go }, 'Continue'),
+    h('div.help', {}, 'Clinics are not listed here. If you do not have your link, ask your clinic admin.')));
+}
 
-  api('/api/auth/clinics').then((d) => { view.clinics = d.clinics; draw(); });
+function loginScreen() {
+  const root = h('div.login');
+  const username = h('input.input', { placeholder: 'Username', autocomplete: 'username', autofocus: true, autocapitalize: 'none' });
+  const password = h('input.input', { placeholder: 'Password', type: 'password', autocomplete: 'current-password' });
+  let clinic = null;
+
+  const submit = () => guard(async () => {
+    const session = await api(`/api/auth/clinic/${slug}/login`, { method: 'POST', body: { username: username.value.trim(), password: password.value } });
+    saveSession(session);
+    await boot(session);
+  });
+  for (const el of [username, password]) el.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+
+  const draw = () => mount(root, h('div.box.stack', {},
+    h('div.crumb', {}, h('span', {}, `/clinic/${slug}/`)),
+    h('h1', {}, clinic ? clinic.name : 'Sign in'),
+    h('p.lede', {}, clinic
+      ? `${clinic.island}, ${clinic.atoll} Atoll. This page belongs to this clinic only.`
+      : 'Loading your clinic…'),
+    h('label.field', {}, h('span', {}, 'Username'), username),
+    h('label.field', {}, h('span', {}, 'Password'), password),
+    h('button.btn.primary.lg.block', { onClick: submit }, 'Sign in'),
+    clinic?.demo ? h('div.help', {},
+      h('div', { style: { fontWeight: 700, marginBottom: '4px' } }, 'Demo sign-ins for this clinic'),
+      clinic.demo.users.map((u) => h('div', {}, h('span.mono', {}, u.username), ` — ${u.name}, ${u.role}`)),
+      h('div', { style: { marginTop: '4px' } }, 'Password for all of them: ', h('span.mono', {}, clinic.demo.password))) : null));
+
+  api(`/api/auth/clinic/${slug}`)
+    .then((c) => { clinic = c; draw(); })
+    .catch(() => mount(root, h('div.box.stack', {},
+      h('h1', {}, 'No clinic at this address'),
+      h('p.lede', {}, `There is no clinic at /clinic/${slug}/. Check the link your clinic admin gave you.`),
+      h('a.btn', { href: '/clinic/' }, 'Try another'))));
   draw();
   return root;
+}
+
+/** First sign-in with a generated password: change it before doing anything else. */
+function changePasswordScreen() {
+  const current = h('input.input', { type: 'password', placeholder: 'The password you were given', autocomplete: 'current-password' });
+  const next = h('input.input', { type: 'password', placeholder: 'At least 8 characters', autocomplete: 'new-password' });
+  return h('div.login', {}, h('div.box.stack', {},
+    h('h1', {}, `Welcome, ${state.staff.name.split(' ')[0]}`),
+    h('p.lede', {}, 'You signed in with a password someone gave you. Choose your own before continuing.'),
+    h('label.field', {}, h('span', {}, 'Current password'), current),
+    h('label.field', {}, h('span', {}, 'New password'), next),
+    h('button.btn.primary.lg.block', {
+      onClick: () => guard(async () => {
+        await api('/api/auth/change-password', { method: 'POST', body: { currentPassword: current.value, newPassword: next.value } });
+        state.session.staff.mustChangePassword = false;
+        state.staff.mustChangePassword = false;
+        saveSession(state.session);
+        render();
+      }, 'Password changed'),
+    }, 'Save and continue')));
 }
 
 // ------------------------------------------------------------------- shell
@@ -147,7 +168,7 @@ function sidebar() {
     h('div.clinic', {},
       h('div.name', {}, state.clinic.name),
       h('div.where', {}, `${state.clinic.island}, ${state.clinic.atoll} Atoll`),
-      h('div.yours', {}, '🔒 Your clinic only')),
+      h('div.yours', { title: `Sign-in address: /clinic/${slug}/` }, '🔒 Your clinic only')),
     h('nav', {}, TABS.map(([key, label, ico], i) =>
       h('button', {
         'aria-current': state.tab === key ? 'page' : null,
@@ -220,7 +241,9 @@ function view() {
 
 export function render() {
   const root = document.getElementById('root');
+  if (!slug) { mount(root, findClinicScreen()); return; }
   if (!state.session) { mount(root, loginScreen()); return; }
+  if (state.staff?.mustChangePassword) { mount(root, changePasswordScreen()); return; }
   const isBoard = state.tab === 'board';
   mount(root, h('div.shell', {}, sidebar(),
     h('div.main', {}, header(), h('div', { class: `view ${isBoard ? 'board-view' : ''}` }, view()))));
@@ -244,6 +267,7 @@ async function boot(session) {
   setAuth(session.token);
   const data = await call(() => api('/api/clinic/bootstrap'));
   Object.assign(state, data);
+  state.staff = { ...data.staff, mustChangePassword: !!session.staff?.mustChangePassword };
   state.tab = (location.hash || '#board').slice(1) || 'board';
   if (!TABS.some(([k]) => k === state.tab)) state.tab = 'board';
   await refreshBoard();
@@ -266,7 +290,7 @@ async function boot(session) {
   render();
 }
 
-const saved = loadSession();
+const saved = slug ? loadSession() : null;
 if (saved?.token) {
   boot(saved).catch(() => { saveSession(null); state.session = null; render(); });
 } else {

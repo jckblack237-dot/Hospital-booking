@@ -18,13 +18,14 @@ const call = async (method, path, token, body) => {
   return { status: res.status, body: res.status === 204 ? null : await res.json().catch(() => null) };
 };
 
+const DEMO = {
+  "Male' Family Clinic": { slug: 'male-family-clinic', password: 'lagoon-2026', admin: 'ahmed.zahir', receptionist: 'shaira' },
+  'Naifaru Health Centre': { slug: 'naifaru-health-centre', password: 'reef-2026', admin: 'mohamed.latheef', receptionist: 'hawwa' },
+};
 async function signIn(clinicName, role = 'admin') {
-  const { body: { clinics } } = await call('GET', '/api/auth/clinics');
-  const clinic = clinics.find((c) => c.name === clinicName);
-  const { body: { staff } } = await call('GET', `/api/auth/clinics/${clinic.id}/staff`);
-  const member = staff.find((s) => s.role === role);
-  const { body } = await call('POST', '/api/auth/login', null, { clinicId: clinic.id, staffId: member.id, pin: '1234' });
-  return { clinic, token: body.token };
+  const d = DEMO[clinicName];
+  const { body } = await call('POST', `/api/auth/clinic/${d.slug}/login`, null, { username: d[role], password: d.password });
+  return { clinic: body.clinic, token: body.token };
 }
 
 /** Two clinics. A is Malé, B is the island clinic. Nothing of B's may reach A. */
@@ -58,11 +59,99 @@ test('nothing on the clinic API works without signing in', async () => {
   }
 });
 
-test('a wrong PIN does not sign in', async () => {
-  const { body: { clinics } } = await call('GET', '/api/auth/clinics');
-  const { body: { staff } } = await call('GET', `/api/auth/clinics/${clinics[0].id}/staff`);
-  const { status } = await call('POST', '/api/auth/login', null, { clinicId: clinics[0].id, staffId: staff[0].id, pin: '0000' });
-  assert.equal(status, 401);
+test('clinics and staff cannot be listed before signing in', async () => {
+  assert.equal((await call('GET', '/api/auth/clinics')).status, 404);
+  assert.equal((await call('GET', `/api/auth/clinics/${A.clinic.id}/staff`)).status, 404);
+  const page = await call('GET', '/api/auth/clinic/male-family-clinic');
+  assert.equal(page.status, 200);
+  assert.ok(!('id' in page.body) && !('staff' in page.body), 'the sign-in page gets a name, not identities');
+  assert.equal((await call('GET', '/api/auth/clinic/some-other-clinic')).status, 404);
+});
+
+test("each clinic's sign-in works only at its own address", async () => {
+  // Malé credentials at the Naifaru address: rejected, and indistinguishable from a bad password.
+  const cross = await call('POST', '/api/auth/clinic/naifaru-health-centre/login', null, { username: 'shaira', password: 'lagoon-2026' });
+  assert.equal(cross.status, 401);
+  const wrong = await call('POST', '/api/auth/clinic/male-family-clinic/login', null, { username: 'shaira', password: 'reef-2026' });
+  assert.equal(wrong.status, 401);
+  assert.equal(cross.body.detail, wrong.body.detail, 'same answer whichever part was wrong');
+});
+
+test('repeated failures lock the account for a while', async () => {
+  for (let i = 0; i < 5; i++) {
+    await call('POST', '/api/auth/clinic/male-family-clinic/login', null, { username: 'nazima', password: 'nope' });
+  }
+  const locked = await call('POST', '/api/auth/clinic/male-family-clinic/login', null, { username: 'nazima', password: 'lagoon-2026' });
+  assert.equal(locked.status, 429, 'even the right password is refused while locked');
+});
+
+test('no response ever carries a password hash or salt', async () => {
+  const settings = await call('GET', '/api/clinic/settings', A.token);
+  const text = JSON.stringify(settings.body);
+  assert.ok(!text.includes('password_hash') && !text.includes('password_salt') && !text.includes('lagoon-2026'));
+});
+
+test('an admin can issue a sign-in; the new person can use it; a receptionist cannot issue one', async () => {
+  const denied = await call('POST', '/api/clinic/staff', (await signIn("Male' Family Clinic", 'receptionist')).token,
+    { name: 'X', username: 'x.y', role: 'receptionist' });
+  assert.equal(denied.status, 403);
+
+  const created = await call('POST', '/api/clinic/staff', A.token, { name: 'Mariyam Waheeda', username: 'mariyam.w', role: 'receptionist' });
+  assert.equal(created.status, 201);
+  assert.match(created.body.password, /^[a-z]+-[a-z]+-\d\d$/, 'a readable generated password, shown once');
+  assert.ok(!('password_hash' in created.body.staff));
+
+  const first = await call('POST', '/api/auth/clinic/male-family-clinic/login', null, { username: 'mariyam.w', password: created.body.password });
+  assert.equal(first.status, 200);
+  assert.equal(first.body.staff.mustChangePassword, true);
+
+  const changed = await call('POST', '/api/auth/change-password', first.body.token, { currentPassword: created.body.password, newPassword: 'my-own-password-1' });
+  assert.equal(changed.status, 200);
+  const again = await call('POST', '/api/auth/clinic/male-family-clinic/login', null, { username: 'mariyam.w', password: 'my-own-password-1' });
+  assert.equal(again.status, 200);
+  assert.equal(again.body.staff.mustChangePassword, false);
+
+  // Same username at the OTHER clinic is a different person entirely.
+  const other = await call('POST', '/api/clinic/staff', B.token, { name: 'Someone Else', username: 'mariyam.w', role: 'billing' });
+  assert.equal(other.status, 201);
+  const wrongClinic = await call('POST', '/api/auth/clinic/naifaru-health-centre/login', null, { username: 'mariyam.w', password: 'my-own-password-1' });
+  assert.equal(wrongClinic.status, 401);
+});
+
+test('switching an account off ends its sessions immediately', async () => {
+  const created = await call('POST', '/api/clinic/staff', A.token, { name: 'Temp Desk', username: 'temp.desk', role: 'receptionist' });
+  const session = await call('POST', '/api/auth/clinic/male-family-clinic/login', null, { username: 'temp.desk', password: created.body.password });
+  assert.equal((await call('GET', '/api/clinic/board', session.body.token)).status, 200);
+  await call('POST', `/api/clinic/staff/${created.body.staff.id}/active`, A.token, { active: false });
+  assert.equal((await call('GET', '/api/clinic/board', session.body.token)).status, 401);
+  const relogin = await call('POST', '/api/auth/clinic/male-family-clinic/login', null, { username: 'temp.desk', password: created.body.password });
+  assert.equal(relogin.status, 401);
+});
+
+test('a clinic cannot be left without an admin, and you cannot switch yourself off', async () => {
+  const admins = db.prepare("SELECT id FROM staff WHERE clinic_id = ? AND role = 'admin' AND active = 1").all(A.clinic.id);
+  const me = db.prepare("SELECT id FROM staff WHERE clinic_id = ? AND username = 'ahmed.zahir'").get(A.clinic.id);
+  assert.equal((await call('POST', `/api/clinic/staff/${me.id}/active`, A.token, { active: false })).status, 400);
+  if (admins.length === 1) {
+    const created = await call('POST', '/api/clinic/staff', A.token, { name: 'Second Admin', username: 'second.admin', role: 'admin' });
+    const second = await call('POST', '/api/auth/clinic/male-family-clinic/login', null, { username: 'second.admin', password: created.body.password });
+    const r = await call('POST', `/api/clinic/staff/${created.body.staff.id}/active`, A.token, { active: false });
+    assert.equal(r.status, 200, 'with two admins, one can be switched off');
+    assert.equal((await call('GET', '/api/clinic/board', second.body.token)).status, 401);
+  }
+});
+
+test('provisioning gives a new clinic its own address and a first admin', async () => {
+  const { provisionClinic } = await import('../server/services/tenancy.js');
+  const out = provisionClinic({ name: 'Hulhumalé Medical', island: 'Hulhumale', atoll: 'K', adminName: 'Aishath Nadha', adminUsername: 'aishath.nadha' });
+  assert.equal(out.slug, 'hulhumal-medical', 'slug is derived from the name');
+  assert.ok(out.signInPath.startsWith('/clinic/'));
+  const login = await call('POST', `/api/auth/clinic/${out.slug}/login`, null, { username: 'aishath.nadha', password: out.password });
+  assert.equal(login.status, 200);
+  assert.equal(login.body.clinic.name, 'Hulhumalé Medical');
+  const board = await call('GET', '/api/clinic/board', login.body.token);
+  assert.equal(board.status, 200);
+  assert.equal(board.body.sessions.length, 0, 'a brand-new clinic has nothing in it — least of all anyone else\'s data');
 });
 
 test('the board shows only the signed-in clinic', async () => {

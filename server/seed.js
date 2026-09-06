@@ -11,6 +11,27 @@ import { createSession, slotsForSession } from './services/scheduling.js';
 import { record as recordDuration, recordTurnover } from './engine/duration-model.js';
 import * as world from './services/ground-truth.js';
 import { invoiceForToken, submitClaims, adjudicate, takePayment, checkEligibility } from './services/billing.js';
+import { hashPassword, slugify } from './services/tenancy.js';
+
+/**
+ * Demo sign-ins. Each clinic has its OWN address and its own password; the
+ * credentials are stored on the clinic so its sign-in page can show them in
+ * demo mode, and nowhere else. Real clinics are provisioned with
+ * `npm run provision`, which generates a password and shows it once.
+ */
+const DEMO = {
+  male: { password: 'lagoon-2026', staff: [['Shaira Ahmed', 'receptionist', 'shaira'], ['Nazima Ali', 'receptionist', 'nazima'],
+    ['Ahmed Zahir', 'admin', 'ahmed.zahir'], ['Ismail Fahmy', 'billing', 'ismail']] },
+  naifaru: { password: 'reef-2026', staff: [['Hawwa Latheefa', 'receptionist', 'hawwa'], ['Mohamed Latheef', 'admin', 'mohamed.latheef']] },
+};
+
+function addStaff(clinicId, password, list) {
+  for (const [name, role, username] of list) {
+    const { hash, salt } = hashPassword(password);
+    db.prepare(`INSERT INTO staff (id, clinic_id, name, role, username, password_hash, password_salt, active, created_at)
+                VALUES (?,?,?,?,?,?,?,1,?)`).run(id('stf'), clinicId, name, role, username, hash, salt, now());
+  }
+}
 
 const DOCTORS = [
   { name: 'Dr. Hassan Waheed', specialty: 'internal_medicine', gender: 'male', languages: ['dv', 'en', 'hi'], fee: 40000, slot: 10, quals: 'MBBS, MD (Internal Medicine)' },
@@ -132,7 +153,7 @@ export function seed({ force = false } = {}) {
   const existing = db.prepare('SELECT COUNT(*) AS c FROM clinics').get().c;
   if (existing && !force) return { skipped: true };
   if (force) {
-    for (const t of ['notification_log', 'eta_accuracy', 'audit', 'idempotency', 'webhook_deliveries',
+    for (const t of ['login_attempts', 'staff_sessions', 'notification_log', 'eta_accuracy', 'audit', 'idempotency', 'webhook_deliveries',
       'webhook_endpoints', 'holds', 'partner_clinic', 'partners', 'referrals', 'eligibility_checks',
       'payments', 'claims', 'invoices', 'messages', 'turnover_stats', 'duration_stats', 'projections',
       'outbox', 'events', 'tokens', 'patients', 'blackouts', 'sessions', 'doctors', 'staff', 'clinics']) {
@@ -148,28 +169,25 @@ export function seed({ force = false } = {}) {
   setTime(demoNow);
 
   const clinicId = id('cln');
-  db.prepare(`INSERT INTO clinics (id, name, atoll, island, address, phone, settings) VALUES (?,?,?,?,?,?,?)`)
+  db.prepare(`INSERT INTO clinics (id, name, atoll, island, address, phone, settings, slug) VALUES (?,?,?,?,?,?,?,?)`)
     .run(clinicId, "Male' Family Clinic", 'K', 'Male', 'Majeedhee Magu, Male\' 20026', '+9603301234',
       JSON.stringify({
         messagingWalletMinor: 250000,
         penalty: { gracePeriodMinutes: 5, penaltyMode: 'move_back_n', moveBackPositions: 2, travelFlagExemption: true },
         tier: 'multi_specialty',
-      }));
+        demoCredentials: { password: DEMO.male.password, users: DEMO.male.staff.map(([n, r, u]) => ({ name: n, role: r, username: u })) },
+      }), slugify("Male' Family Clinic"));
 
   const atollClinicId = id('cln');
-  db.prepare(`INSERT INTO clinics (id, name, atoll, island, address, phone, settings) VALUES (?,?,?,?,?,?,?)`)
+  db.prepare(`INSERT INTO clinics (id, name, atoll, island, address, phone, settings, slug) VALUES (?,?,?,?,?,?,?,?)`)
     .run(atollClinicId, 'Naifaru Health Centre', 'Lh', 'Naifaru', 'Naifaru, Lhaviyani Atoll', '+9606620123',
-      JSON.stringify({ messagingWalletMinor: 80000, tier: 'solo', atollDiscount: true }));
+      JSON.stringify({
+        messagingWalletMinor: 80000, tier: 'solo', atollDiscount: true,
+        demoCredentials: { password: DEMO.naifaru.password, users: DEMO.naifaru.staff.map(([n, r, u]) => ({ name: n, role: r, username: u })) },
+      }), slugify('Naifaru Health Centre'));
 
-  for (const [name, role] of [['Shaira Ahmed', 'receptionist'], ['Nazima Ali', 'receptionist'],
-    ['Ahmed Zahir', 'admin'], ['Ismail Fahmy', 'billing']]) {
-    db.prepare('INSERT INTO staff (id, clinic_id, name, role, pin) VALUES (?,?,?,?,?)')
-      .run(id('stf'), clinicId, name, role, '1234');
-  }
-  for (const [name, role] of [['Hawwa Latheefa', 'receptionist'], ['Mohamed Latheef', 'admin']]) {
-    db.prepare('INSERT INTO staff (id, clinic_id, name, role, pin) VALUES (?,?,?,?,?)')
-      .run(id('stf'), atollClinicId, name, role, '1234');
-  }
+  addStaff(clinicId, DEMO.male.password, DEMO.male.staff);
+  addStaff(atollClinicId, DEMO.naifaru.password, DEMO.naifaru.staff);
 
   const doctorRows = [];
   for (const d of DOCTORS) {
