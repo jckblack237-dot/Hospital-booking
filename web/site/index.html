@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vaguthu — the operational brain of a Maldivian clinic</title>
+<meta name="description" content="A cloud queue-management dashboard for clinics in the Maldives, and a patient app that tells people when to leave for their appointment.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🩺</text></svg>">
+<link rel="stylesheet" href="/shared/tokens.css">
+<link rel="stylesheet" href="/shared/ui.css">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+
+<header class="site-head">
+  <a class="brand" href="/"><span class="mark">V</span> Vaguthu</a>
+  <nav>
+    <a href="#problem">The problem</a>
+    <a href="#clinic">For clinics</a>
+    <a href="#patients">For patients</a>
+    <a href="#pricing">Pricing</a>
+    <a href="#api">API</a>
+  </nav>
+  <div class="head-cta">
+    <a class="btn sm" href="/app/">Patient app</a>
+    <a class="btn sm primary" href="/clinic/">Open the dashboard</a>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap">
+    <span class="pill brand">Built for the Maldives</span>
+    <h1>Nobody should sit in a lobby<br>just to find out how long they'll wait.</h1>
+    <p class="lede">
+      Vaguthu is the queue layer for Maldivian clinics. The dashboard runs the reception desk and the
+      consulting room. The app tells patients which token the doctor is on right now — and when to
+      leave for the clinic.
+    </p>
+    <div class="row wrap" style="gap:10px;margin-top:26px">
+      <a class="btn primary lg" href="/clinic/">Open the clinic dashboard</a>
+      <a class="btn lg" href="/app/">Open the patient app</a>
+      <a class="btn lg ghost" href="/docs/02-prd-b2b-clinic-command-center.md">Read the PRD</a>
+    </div>
+    <p class="dim tiny" style="margin-top:14px">
+      Working demo with seeded data. Press <strong>Run the evening</strong> in the dashboard to watch a
+      real clinic session play out at 20× speed.
+    </p>
+  </div>
+  <div class="hero-art" aria-hidden="true">
+    <div class="mock">
+      <div class="mock-row"><span class="mono">A-13</span><span>in the room</span><span class="pill ok">7 min</span></div>
+      <div class="mock-row now"><span class="mono">A-14</span><span>Ibrahim M.</span><span class="mono">19:05–19:25</span></div>
+      <div class="mock-row"><span class="mono">A-15</span><span>Fathimath R.</span><span class="pill violet">✈ Naifaru</span></div>
+      <div class="mock-row"><span class="mono">A-16</span><span>Aishath S.</span><span class="mono">19:31–19:58</span></div>
+      <div class="mock-leave">🚶 Leave in about 22 minutes</div>
+    </div>
+  </div>
+</section>
+
+<section id="problem" class="wrap band">
+  <h2>The queue has no digital source of truth</h2>
+  <p class="lede">
+    A patient books for 16:00, arrives at 15:45, and is seen at 18:20. Nobody lied to them. The doctor
+    started 40 minutes late, three walk-ins were inserted, and one consultation ran 25 minutes over.
+    The clinic has no way to tell them any of this, because the queue lives on a paper register and in
+    the receptionist's head.
+  </p>
+  <div class="grid k3">
+    <div class="card pad">
+      <h3>The lobby is an information system</h3>
+      <p>People sit there because being physically present is the only way to know their position. Crowding, anxiety and a receptionist answering "how long more?" all the way down.</p>
+    </div>
+    <div class="card pad">
+      <h3>An atoll trip is a whole day</h3>
+      <p>A 20-minute delay in Malé costs an atoll patient a missed ferry and a night in a relative's flat. They cannot absorb uncertainty the way a Malé office worker can.</p>
+    </div>
+    <div class="card pad">
+      <h3>Nobody can see the pattern</h3>
+      <p>No clinic owner can tell you which of their doctors habitually starts late, or that a 10-minute slot for a 14-minute consultation is what actually causes the backlog.</p>
+    </div>
+  </div>
+</section>
+
+<section id="clinic" class="wrap band">
+  <span class="eyebrow">For clinics</span>
+  <h2>The operational brain of the clinic</h2>
+  <div class="grid k2">
+    <div class="card pad">
+      <h3>Receptionist Command Center</h3>
+      <p>One board merging walk-ins, phone bookings and app bookings. Drag-and-drop reordering, configurable delay penalties, one-tap Viber/SMS dispatch, and a command palette so it can be run entirely from the keyboard.</p>
+    </div>
+    <div class="card pad">
+      <h3>Doctor module</h3>
+      <p>One patient, two buttons. Start and End feed the wait-time engine, which is what makes every estimate real rather than theoretical. Punctuality is shown to the doctor first, framed as a scheduling input — never a leaderboard.</p>
+    </div>
+    <div class="card pad">
+      <h3>Billing &amp; insurance</h3>
+      <p>Multi-payer by default: Aasandha, private insurers, corporate accounts and self-pay, with split billing as the normal case. Claim construction, a rejection worklist, and rejection analytics. Payment rails via BML and m-Faisaa.</p>
+    </div>
+    <div class="card pad">
+      <h3>Admin &amp; analytics</h3>
+      <p>Doctor punctuality, daily revenue, patient volume — and a weekly digest written as findings, not a chart dump. <em>"Dr. Hassan's median consultation is 14 minutes but he is scheduled at 10."</em></p>
+    </div>
+  </div>
+</section>
+
+<section id="engine" class="wrap band">
+  <span class="eyebrow">The hard part</span>
+  <h2>The Dynamic Token Engine</h2>
+  <p class="lede">A patient will leave the lobby only if they believe the number. They will believe it roughly twice before deciding it is noise.</p>
+  <div class="grid k3">
+    <div class="card pad">
+      <h3>Durations are log-normal</h3>
+      <p>A hard floor, a dense mode, and a long right tail. Modelling the mean is the mistake that makes the people at the back of the queue systematically late.</p>
+    </div>
+    <div class="card pad">
+      <h3>Overruns don't go negative</h3>
+      <p>For the patient currently in the room we use the conditional expected residual, not <span class="mono">expected − elapsed</span>. A consultation already running 20 minutes is evidence of a complex case — so the estimate grows, as it should.</p>
+    </div>
+    <div class="card pad">
+      <h3>Prayer pauses are in the model</h3>
+      <p>Blackout intervals are first-class objects. An engine that treats a session as one continuous block is visibly wrong five times a day here.</p>
+    </div>
+    <div class="card pad">
+      <h3>A window, never a point</h3>
+      <p>Patients see a range with a stated confidence. A single time is read as a promise, and every broken promise costs more than the vagueness of a range.</p>
+    </div>
+    <div class="card pad">
+      <h3>Leave early, on purpose</h3>
+      <p>"Leave now" fires against the early edge of the window. Ten minutes early costs a waiting room; ten minutes late can cost the turn — and, for a ferry passenger, the day.</p>
+    </div>
+    <div class="card pad">
+      <h3>Silence is a bug</h3>
+      <p>Every ETA change carries a reason. <em>"Running 17 min later — a consultation ahead of you ran long"</em> reads as a clinic being a clinic. A number that changes on its own reads as incompetence.</p>
+    </div>
+  </div>
+</section>
+
+<section id="patients" class="wrap band">
+  <span class="eyebrow">For patients</span>
+  <h2>Wait at a café, not in a lobby</h2>
+  <div class="grid k2">
+    <div class="card pad"><h3>Find the right doctor</h3><p>By specialty, by island, by language spoken, by whether they take Aasandha. Symptom search routes to a kind of doctor — never to a diagnosis — and intercepts emergency symptoms before anything else.</p></div>
+    <div class="card pad"><h3>Watch the queue live</h3><p>Which token is in the room, how many people are ahead, a time window you can plan around, and a push that says <strong>leave now</strong>.</p></div>
+    <div class="card pad"><h3>Carry your paperwork</h3><p>ID, Aasandha status, and GP referral letters in one place, available offline — because the referral letter you left on the island is a wasted ferry trip.</p></div>
+    <div class="card pad"><h3>One account, whole household</h3><p>Book and track for your children and your parents. In this market a single adult routinely manages care for three or four people.</p></div>
+  </div>
+</section>
+
+<section id="pricing" class="wrap band">
+  <span class="eyebrow">Pricing</span>
+  <h2>Priced per doctor. Reception seats are free.</h2>
+  <p class="lede">Charging per receptionist would push clinics to share logins, which destroys the audit trail and the per-staff analytics. Never price a metric you need to be accurate.</p>
+  <div class="grid k4 pricing">
+    <div class="card pad tier">
+      <h3>Solo</h3><div class="price">MVR 749<span>/mo</span></div>
+      <p class="dim tiny">1 doctor</p>
+      <ul><li>Queue board, unlimited staff seats</li><li>Doctor module</li><li>Token engine &amp; ETAs</li><li>Viber/SMS (metered)</li><li>Payments &amp; eligibility</li><li>Basic analytics</li></ul>
+    </div>
+    <div class="card pad tier featured">
+      <h3>Clinic</h3><div class="price">MVR 2,450<span>/mo</span></div>
+      <p class="dim tiny">2–5 doctors · includes 3</p>
+      <ul><li>Everything in Solo</li><li>Aasandha claims + rejection worklist</li><li>Private &amp; corporate payers</li><li>Recall campaigns</li><li>Partner API</li><li>+MVR 550 per extra doctor</li></ul>
+    </div>
+    <div class="card pad tier">
+      <h3>Multi-Specialty</h3><div class="price">MVR 6,900<span>/mo</span></div>
+      <p class="dim tiny">6–15 doctors · includes 8</p>
+      <ul><li>Everything in Clinic</li><li>Full analytics + anomaly alerts</li><li>Up to 3 sites</li><li>Priority support + named CSM</li><li>On-site onboarding</li><li>+MVR 450 per extra doctor</li></ul>
+    </div>
+    <div class="card pad tier">
+      <h3>Enterprise</h3><div class="price">From MVR 15,000<span>/mo</span></div>
+      <p class="dim tiny">15+ doctors, hospitals, groups</p>
+      <ul><li>Unlimited sites</li><li>SSO &amp; custom roles</li><li>EMR / LIS integration</li><li>Data residency &amp; custom DPA</li><li>1-hour SLA</li></ul>
+    </div>
+  </div>
+  <p class="dim tiny" style="margin-top:14px">
+    A 15-doctor centre in Malé comes to about MVR 10,050/month — under 0.3% of its revenue, and less than one receptionist's salary.
+    Clinics outside Greater Malé get 50% off indefinitely: atoll coverage is what makes the patient app's travel promise real.
+    <a href="/docs/02-prd-b2b-clinic-command-center.md">Full pricing rationale →</a>
+  </p>
+</section>
+
+<section id="api" class="wrap band">
+  <span class="eyebrow">Platform</span>
+  <h2>We publish the API. Including to our competitors.</h2>
+  <p class="lede">
+    It removes the strongest objection in the sale — <em>"I don't want to lock my patients into one app"</em> —
+    and rails outlast destinations. The clinic decides which partners can read its queue and how much of
+    each session they may sell, and revocation takes effect immediately.
+  </p>
+  <pre class="code"><code>curl -X POST https://api.vaguthu.mv/v1/holds \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"slot_id": "ses_44Ab:3"}'
+
+# then subscribe to what actually matters
+POST /v1/webhook_endpoints
+{ "events": ["queue.token.leave_now",
+             "queue.token.eta_changed",
+             "queue.session.delayed"] }</code></pre>
+  <p><a class="btn" href="/docs/05-partner-api-and-webhooks.md">API blueprint</a>
+     <a class="btn" href="/docs/api/openapi.yaml">OpenAPI</a>
+     <a class="btn ghost" href="/docs/04-dynamic-token-engine.md">Engine architecture</a></p>
+</section>
+
+<section class="wrap band">
+  <h2>Honest about what isn't wired up</h2>
+  <p class="lede">
+    This is a working implementation with real engine, queue, billing and API logic — and simulated
+    external counterparties. Aasandha, eFaas, BML, Ooredoo m-Faisaa and Viber are unverified
+    assumptions, each behind an adapter interface with a functioning degraded path. Nothing here
+    pretends to a partnership we do not have.
+  </p>
+  <p><a class="btn" href="/docs/01-market-context.md">Assumption register (A1–A7)</a></p>
+</section>
+
+<footer class="site-foot">
+  <div class="wrap spread">
+    <span class="dim tiny">Vaguthu — working name, pending trademark clearance. Demo build.</span>
+    <span class="row">
+      <a href="/clinic/">Dashboard</a><a href="/app/">Patient app</a><a href="/docs/01-market-context.md">Docs</a>
+    </span>
+  </div>
+</footer>
+
+</body>
+</html>

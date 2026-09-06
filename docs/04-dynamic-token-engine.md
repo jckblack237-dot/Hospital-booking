@@ -128,11 +128,12 @@ Two overrides sit on top:
 Point estimates are a lie we tell for free and pay for expensively. We propagate variance through the queue — approximately, by summing per-token variances (an assumption of independence that is close enough for `n < 40`, and cheap) — and publish:
 
 - **P50** — the honest midpoint
-- **P80** — the number we build *patient-facing* decisions on
+- **the P80 window** — the central 80% interval, `[P10, P90]`, which is what the patient sees
+- **P10** — the early edge, and the number "leave now" is built on
 
 The B2C app shows a window (`18:40 – 19:05`), never a single time. The **"leave now"** trigger is computed against **P80 minus travel time**, deliberately asymmetric:
 
-> Telling a patient to leave 10 minutes too early costs them 10 minutes in a waiting room. Telling them to leave 10 minutes too late costs them their turn, their trust, and — for someone who took a ferry from Naifaru — potentially their entire day. **We buy the cheap error.**
+> Telling a patient to leave 10 minutes too early costs them 10 minutes in a waiting room. Telling them to leave 10 minutes too late costs them their turn, their trust, and — for someone who took a ferry from Naifaru — potentially their entire day. **We buy the cheap error**, which is why the trigger fires against the early edge of the window rather than the midpoint or the late edge. Aiming at P50 would leave half of all patients arriving after they were called.
 
 Confidence is also displayed as a state (`high` / `medium` / `low`), driven by the width of the interval and the doctor's recent variance. Early in a session, or for a doctor with erratic durations, the app says so rather than pretending.
 
@@ -253,7 +254,8 @@ travel_time = f(patient_location_mode, clinic_id)
    · Travelling from an atoll →  handled as a scheduling constraint,
                                  not a notification (see B2C PRD §5)
 
-leave_at = P80(predicted_start) − travel_time − check_in_buffer(5 min)
+leave_at = P10(predicted_start) − travel_time − check_in_buffer(5 min)
+           └── the EARLY edge of the published window, not the late one
 ```
 
 We deliberately do **not** ask for continuous location access. It is unnecessary — the patient knows where they are far better than we do — and asking for it would cost us installs and trust for no accuracy gain. A single "where are you waiting?" control at booking time gets us 95% of the value at zero privacy cost.
