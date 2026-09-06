@@ -24,6 +24,28 @@ CREATE TABLE IF NOT EXISTS staff (
   name TEXT NOT NULL, role TEXT NOT NULL, pin TEXT NOT NULL
 );
 
+-- A signed-in staff member. Every clinic API call resolves its tenant from
+-- this row and from nothing else: never from a query parameter, never from
+-- the body. The clinic id is not an input, it is a consequence of who is
+-- signed in.
+CREATE TABLE IF NOT EXISTS staff_sessions (
+  token TEXT PRIMARY KEY, staff_id TEXT NOT NULL REFERENCES staff(id),
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, last_seen_at INTEGER
+);
+
+-- Which patients a clinic is allowed to know exist. A clinic's CRM sees only
+-- the people who have booked, walked in, or been registered THERE. The patient
+-- identity itself is platform-level (it is the patient's own app account), but
+-- no clinic can enumerate it.
+CREATE TABLE IF NOT EXISTS clinic_patients (
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  patient_id TEXT NOT NULL REFERENCES patients(id),
+  first_seen_at INTEGER NOT NULL, note TEXT,
+  PRIMARY KEY (clinic_id, patient_id)
+);
+CREATE INDEX IF NOT EXISTS idx_clinic_patients_patient ON clinic_patients(patient_id);
+
 CREATE TABLE IF NOT EXISTS doctors (
   id TEXT PRIMARY KEY, clinic_id TEXT NOT NULL REFERENCES clinics(id),
   name TEXT NOT NULL, specialty TEXT NOT NULL, qualifications TEXT,

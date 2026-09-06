@@ -94,7 +94,7 @@ export function punctuality(clinicId, fromMs, toMs) {
       finding: durations.length >= 8 && Math.abs(suggested - d.scheduledSlotMinutes) >= 2
         ? `${d.name}'s median consultation is ${round1(q(0.5))} min but is scheduled at ${d.scheduledSlotMinutes}. `
           + `Moving to ${suggested}-minute slots would cut average patient wait and cost about `
-          + `${Math.max(0, Math.round((suggested - d.scheduledSlotMinutes) * 10 / suggested))} slots per session.`
+          + `${slotWord(Math.max(0, Math.round((suggested - d.scheduledSlotMinutes) * 10 / suggested)))} per session.`
         : null,
     };
   });
@@ -206,6 +206,7 @@ export function weeklyDigest(clinicId, at = now()) {
 }
 
 // -------------------------------------------------------------------- helpers
+const slotWord = (n) => `${n} slot${n === 1 ? '' : 's'}`;
 function median(arr) {
   if (!arr?.length) return null;
   const s = [...arr].sort((a, b) => a - b);

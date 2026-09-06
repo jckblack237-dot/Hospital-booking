@@ -1,4 +1,10 @@
-/** Clinic dashboard API — receptionist board, doctor module, billing, admin. */
+/**
+ * Clinic dashboard API — receptionist board, doctor module, billing, admin.
+ *
+ * Every route runs behind `requireStaff`, so `req.tenant.clinicId` is the only
+ * clinic any query may touch. Entity routes call `own()` first. There is no
+ * `clinicId` parameter anywhere in this file, on purpose.
+ */
 import express from 'express';
 import { db } from '../db.js';
 import { now, MINUTE } from '../lib/clock.js';
@@ -11,34 +17,33 @@ import * as billing from '../services/billing.js';
 import * as messaging from '../services/messaging.js';
 import * as analytics from '../services/analytics.js';
 import * as simulator from '../services/simulator.js';
+import { requireStaff, own, linkPatient } from '../services/tenancy.js';
 
 export const router = express.Router();
+router.use(requireStaff);
 
-function audit(clinicId, actor, action, entity, after) {
+function audit(req, action, entity, after) {
   db.prepare('INSERT INTO audit (id, clinic_id, actor, action, entity, after, at) VALUES (?,?,?,?,?,?,?)')
-    .run(id('aud'), clinicId, actor || 'receptionist', action, entity ?? null,
+    .run(id('aud'), req.tenant.clinicId, req.tenant.staff.name, action, entity ?? null,
       after ? JSON.stringify(after).slice(0, 2000) : null, now());
 }
 
-const defaultClinic = () => db.prepare('SELECT * FROM clinics ORDER BY rowid LIMIT 1').get();
-
 router.get('/bootstrap', asyncRoute((req, res) => {
-  const clinic = req.query.clinicId ? db.prepare('SELECT * FROM clinics WHERE id = ?').get(req.query.clinicId) : defaultClinic();
-  if (!clinic) throw HttpError.notFound('Clinic');
+  const { clinicId, staff } = req.tenant;
+  const clinic = db.prepare('SELECT * FROM clinics WHERE id = ?').get(clinicId);
   res.json({
     clinic: { ...clinic, settings: parse(clinic.settings, {}) },
-    clinics: db.prepare('SELECT id, name, island FROM clinics').all(),
-    doctors: db.prepare('SELECT * FROM doctors WHERE clinic_id = ? ORDER BY rowid').all(clinic.id)
+    staff,
+    doctors: db.prepare('SELECT * FROM doctors WHERE clinic_id = ? ORDER BY rowid').all(clinicId)
       .map((d) => ({ ...d, languages: parse(d.languages, []) })),
-    staff: db.prepare('SELECT * FROM staff WHERE clinic_id = ?').all(clinic.id),
-    penaltyPolicy: queue.clinicSettings(clinic.id).penalty,
+    penaltyPolicy: queue.clinicSettings(clinicId).penalty,
     serverNow: now(),
   });
 }));
 
 /** The board: every doctor column, every token, with the live projection merged in. */
 router.get('/board', asyncRoute((req, res) => {
-  const clinicId = req.query.clinicId || defaultClinic()?.id;
+  const { clinicId } = req.tenant;
   const day = req.query.day ? Number(req.query.day) : now();
   const sessions = scheduling.sessionsForDay(clinicId, day);
   const out = sessions.map((s) => {
@@ -47,7 +52,7 @@ router.get('/board', asyncRoute((req, res) => {
       projection = recompute(s.id, { notify: false })?.projection ?? projection;
     }
     const tokens = db.prepare(`SELECT t.*, p.name AS patient_name, p.phone, p.language, p.payer_type,
-        p.insurer, p.travel_island, p.travel_atoll, p.national_id, p.dob
+        p.insurer, p.travel_island, p.travel_atoll, p.dob
         FROM tokens t JOIN patients p ON p.id = t.patient_id
         WHERE t.session_id = ? ORDER BY t.seq`).all(s.id).map((t) => {
       const entry = projection?.entries?.find((e) => e.tokenId === t.id) ?? null;
@@ -73,14 +78,14 @@ router.get('/board', asyncRoute((req, res) => {
 
 // ------------------------------------------------------------------ sessions
 const sessionAction = (fn) => asyncRoute((req, res) => {
+  own('session', req.params.id, req.tenant.clinicId);
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
-  if (!session) throw HttpError.notFound('Session');
   const result = fn(req, session);
-  audit(session.clinic_id, req.body?.actor, req.path.split('/').pop(), session.id, req.body);
-  res.json({ ok: true, ...(result || {}) });
+  audit(req, `session.${req.path.split('/').pop()}`, session.id, req.body);
+  res.json({ ok: true, ...(result && !result.projection ? result : {}) });
 });
 
-router.post('/sessions/:id/start', sessionAction((req, s) => queue.startSession(s.id, req.body?.actor)));
+router.post('/sessions/:id/start', sessionAction((req, s) => queue.startSession(s.id, req.tenant.staff.name)));
 router.post('/sessions/:id/end', sessionAction((req, s) => { queue.endSession(s.id); queue.renormalise(s.id); }));
 router.post('/sessions/:id/pause', sessionAction((req, s) => queue.pauseSession(s.id, {
   kind: req.body?.kind ?? 'break', expectedMinutes: Number(req.body?.expectedMinutes ?? 15),
@@ -90,12 +95,14 @@ router.post('/sessions/:id/delay', sessionAction((req, s) => queue.delaySession(
 router.post('/sessions/:id/cancel', sessionAction((req, s) => queue.cancelSession(s.id, req.body?.reason)));
 
 router.get('/sessions/:id/broadcast-estimate', asyncRoute((req, res) => {
+  own('session', req.params.id, req.tenant.clinicId);
   res.json(messaging.estimateBroadcast(req.params.id));
 }));
 router.post('/sessions/:id/broadcast', sessionAction((req, s) =>
   messaging.broadcast({ sessionId: s.id, clinicId: s.clinic_id, text: String(req.body?.text || '').slice(0, 400) })));
 
 router.post('/sessions/:id/simulate', asyncRoute((req, res) => {
+  own('session', req.params.id, req.tenant.clinicId);
   const on = req.body?.enabled !== false;
   if (on) simulator.enable(req.params.id, req.body ?? {});
   else simulator.disable(req.params.id);
@@ -104,35 +111,50 @@ router.post('/sessions/:id/simulate', asyncRoute((req, res) => {
 
 // -------------------------------------------------------------------- tokens
 router.post('/tokens', asyncRoute((req, res) => {
+  const { clinicId } = req.tenant;
   const { sessionId, patientId, source = 'walk_in', visitType = 'new', priorityReason = null } = req.body || {};
   if (!sessionId) throw HttpError.badRequest('sessionId is required');
+  own('session', sessionId, clinicId);
+
   let pid = patientId;
-  if (!pid) {
+  if (pid) {
+    own('patient', pid, clinicId);
+  } else {
     const { name, phone, nationalId, language = 'dv', payerType = 'aasandha', travelIsland, travelAtoll } = req.body || {};
     if (!name || !phone) throw HttpError.badRequest('name and phone are required to create a patient');
-    const existing = db.prepare('SELECT * FROM patients WHERE phone = ?').get(phone);
+    // Look for the person among THIS clinic's patients only. A phone number
+    // known to another clinic is not this clinic's business.
+    const existing = db.prepare(`SELECT p.* FROM patients p JOIN clinic_patients cp ON cp.patient_id = p.id
+                                 WHERE cp.clinic_id = ? AND p.phone = ?`).get(clinicId, phone);
     if (existing) {
       pid = existing.id;
     } else {
-      pid = id('pat');
-      db.prepare(`INSERT INTO patients (id, name, phone, national_id, language, payer_type, travel_island, travel_atoll, created_at)
-                  VALUES (?,?,?,?,?,?,?,?,?)`)
-        .run(pid, name, phone, nationalId ?? null, language, payerType, travelIsland ?? null, travelAtoll ?? null, now());
+      // The platform identity may already exist (the person has an app account
+      // or has visited elsewhere). We link to it so their own app keeps working,
+      // but nothing from other clinics becomes visible here.
+      const identity = db.prepare('SELECT id FROM patients WHERE phone = ?').get(phone);
+      if (identity) {
+        pid = identity.id;
+      } else {
+        pid = id('pat');
+        db.prepare(`INSERT INTO patients (id, name, phone, national_id, language, payer_type, travel_island, travel_atoll, created_at)
+                    VALUES (?,?,?,?,?,?,?,?,?)`)
+          .run(pid, name, phone, nationalId ?? null, language, payerType, travelIsland ?? null, travelAtoll ?? null, now());
+      }
+      linkPatient(clinicId, pid);
     }
   }
   const token = queue.addToken({ sessionId, patientId: pid, source, visitType, priorityReason });
   billing.checkEligibility(pid);
-  const session = db.prepare('SELECT clinic_id FROM sessions WHERE id = ?').get(sessionId);
-  audit(session.clinic_id, req.body?.actor, 'token.create', token.id, { source, priorityReason });
+  audit(req, 'token.create', token.id, { source, priorityReason });
   res.status(201).json({ token });
 }));
 
 const tokenAction = (fn) => asyncRoute((req, res) => {
+  own('token', req.params.id, req.tenant.clinicId);
   const token = db.prepare('SELECT * FROM tokens WHERE id = ?').get(req.params.id);
-  if (!token) throw HttpError.notFound('Token');
   const result = fn(req, token);
-  const session = db.prepare('SELECT clinic_id FROM sessions WHERE id = ?').get(token.session_id);
-  audit(session?.clinic_id, req.body?.actor, req.path.split('/').pop(), token.id, req.body);
+  audit(req, `token.${req.path.split('/').pop()}`, token.id, req.body);
   res.json({ ok: true, ...(result && typeof result === 'object' && !result.projection ? result : {}) });
 });
 
@@ -145,14 +167,20 @@ router.post('/tokens/:id/cancel', tokenAction((req, t) => queue.cancelToken(t.id
 router.post('/tokens/:id/penalty', tokenAction((req, t) => queue.applyPenalty(t.id, req.body?.cause ?? 'not_present')));
 router.post('/tokens/:id/revoke-penalty', tokenAction((req, t) => queue.revokePenalty(t.id)));
 router.post('/tokens/:id/reinstate', tokenAction((req, t) => queue.reinstate(t.id)));
-router.post('/tokens/:id/reorder', tokenAction((req, t) => queue.reorder(t.id, {
-  afterTokenId: req.body?.afterTokenId ?? null, beforeTokenId: req.body?.beforeTokenId ?? null,
-})));
-router.post('/tokens/:id/reassign', tokenAction((req, t) => queue.reassign(t.id, req.body?.sessionId)));
+router.post('/tokens/:id/reorder', tokenAction((req, t) => {
+  const { afterTokenId = null, beforeTokenId = null } = req.body || {};
+  if (afterTokenId) own('token', afterTokenId, req.tenant.clinicId);
+  if (beforeTokenId) own('token', beforeTokenId, req.tenant.clinicId);
+  return queue.reorder(t.id, { afterTokenId, beforeTokenId });
+}));
+router.post('/tokens/:id/reassign', tokenAction((req, t) => {
+  own('session', req.body?.sessionId, req.tenant.clinicId);
+  return queue.reassign(t.id, req.body.sessionId);
+}));
 
 router.post('/tokens/:id/end', asyncRoute((req, res) => {
+  own('token', req.params.id, req.tenant.clinicId);
   const token = db.prepare('SELECT * FROM tokens WHERE id = ?').get(req.params.id);
-  if (!token) throw HttpError.notFound('Token');
   queue.endConsult(token.id);
   const invoice = billing.invoiceForToken(token.id, req.body?.extraLines ?? []);
   if (req.body?.callNext) {
@@ -160,6 +188,7 @@ router.post('/tokens/:id/end', asyncRoute((req, res) => {
                              AND state IN ('booked','arrived','called','penalised') ORDER BY seq LIMIT 1`).get(token.session_id);
     if (next) queue.startConsult(next.id);
   }
+  audit(req, 'token.end', token.id, {});
   res.json({ ok: true, invoice });
 }));
 
@@ -168,36 +197,49 @@ router.post('/tokens/:id/note', tokenAction((req, t) => {
 }));
 
 // ------------------------------------------------------------------ patients
+/** Only patients this clinic has actually seen or registered. */
 router.get('/patients', asyncRoute((req, res) => {
   const q = `%${String(req.query.q || '').trim()}%`;
-  const rows = db.prepare(`SELECT * FROM patients WHERE name LIKE ? OR phone LIKE ? OR national_id LIKE ?
-                           ORDER BY created_at DESC LIMIT 25`).all(q, q, q);
+  const rows = db.prepare(`SELECT p.* FROM patients p JOIN clinic_patients cp ON cp.patient_id = p.id
+                           WHERE cp.clinic_id = ? AND (p.name LIKE ? OR p.phone LIKE ? OR p.national_id LIKE ?)
+                           ORDER BY cp.first_seen_at DESC LIMIT 25`).all(req.tenant.clinicId, q, q, q);
   res.json({ patients: rows });
 }));
 
 router.get('/patients/:id', asyncRoute((req, res) => {
+  const { clinicId } = req.tenant;
+  own('patient', req.params.id, clinicId);
   const patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(req.params.id);
-  if (!patient) throw HttpError.notFound('Patient');
+  // Household members are shown only if this clinic knows them too.
+  const household = db.prepare(`SELECT p.* FROM patients p JOIN clinic_patients cp ON cp.patient_id = p.id
+                                WHERE p.household_of = ? AND cp.clinic_id = ?`).all(patient.id, clinicId);
   res.json({
     patient: { ...patient, notify_prefs: parse(patient.notify_prefs, {}) },
-    household: db.prepare('SELECT * FROM patients WHERE household_of = ?').all(patient.id),
+    household,
+    // Visits, invoices and messages at THIS clinic. What happened elsewhere is
+    // the patient's own record, not this clinic's.
     visits: db.prepare(`SELECT t.*, s.scheduled_start, d.name AS doctor_name FROM tokens t
                         JOIN sessions s ON s.id = t.session_id JOIN doctors d ON d.id = s.doctor_id
-                        WHERE t.patient_id = ? ORDER BY s.scheduled_start DESC LIMIT 30`).all(patient.id),
-    invoices: billing.invoicesForPatient(patient.id),
-    messages: messaging.ledgerForPatient(patient.id, 30),
+                        WHERE t.patient_id = ? AND s.clinic_id = ? ORDER BY s.scheduled_start DESC LIMIT 30`).all(patient.id, clinicId),
+    invoices: db.prepare('SELECT * FROM invoices WHERE patient_id = ? AND clinic_id = ? ORDER BY created_at DESC').all(patient.id, clinicId)
+      .map((r) => ({ ...r, lines: parse(r.lines, []) })),
+    messages: db.prepare('SELECT * FROM messages WHERE patient_id = ? AND clinic_id = ? ORDER BY at DESC LIMIT 30').all(patient.id, clinicId),
     eligibility: billing.latestEligibility(patient.id),
-    referrals: db.prepare('SELECT * FROM referrals WHERE patient_id = ? ORDER BY issued_at DESC').all(patient.id),
+    referrals: db.prepare(`SELECT r.* FROM referrals r LEFT JOIN tokens t ON t.id = r.used_token_id
+                           LEFT JOIN sessions s ON s.id = t.session_id
+                           WHERE r.patient_id = ? AND (s.clinic_id = ? OR r.used_token_id IS NULL)
+                           ORDER BY r.issued_at DESC`).all(patient.id, clinicId),
   });
 }));
 
 router.post('/patients/:id/eligibility', asyncRoute((req, res) => {
+  own('patient', req.params.id, req.tenant.clinicId);
   res.json(billing.checkEligibility(req.params.id));
 }));
 
 // ------------------------------------------------------------------- billing
 router.get('/billing', asyncRoute((req, res) => {
-  const clinicId = req.query.clinicId || defaultClinic()?.id;
+  const { clinicId } = req.tenant;
   const from = req.query.from ? Number(req.query.from) : now() - 30 * 86_400_000;
   res.json({
     invoices: db.prepare(`SELECT i.*, p.name AS patient_name FROM invoices i JOIN patients p ON p.id = i.patient_id
@@ -212,27 +254,28 @@ router.get('/billing', asyncRoute((req, res) => {
 }));
 
 router.post('/billing/claims/submit', asyncRoute((req, res) => {
-  const clinicId = req.body?.clinicId || defaultClinic()?.id;
-  res.json(billing.submitClaims(clinicId));
+  res.json(billing.submitClaims(req.tenant.clinicId));
 }));
 router.post('/billing/claims/adjudicate', asyncRoute((req, res) => {
-  const clinicId = req.body?.clinicId || defaultClinic()?.id;
-  res.json(billing.adjudicate(clinicId, Number(req.body?.rejectionRate ?? 0.18)));
+  res.json(billing.adjudicate(req.tenant.clinicId, Number(req.body?.rejectionRate ?? 0.18)));
 }));
 router.post('/billing/claims/:id/resubmit', asyncRoute((req, res) => {
+  own('claim', req.params.id, req.tenant.clinicId);
   res.json({ claim: billing.resubmitClaim(req.params.id) });
 }));
 router.post('/billing/payments', asyncRoute((req, res) => {
   const { invoiceId, method, amountMinor } = req.body || {};
   if (!invoiceId || !method) throw HttpError.badRequest('invoiceId and method are required');
+  own('invoice', invoiceId, req.tenant.clinicId);
   const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId);
   const payment = billing.takePayment({ invoiceId, method, amountMinor: Number(amountMinor ?? invoice?.patient_minor ?? 0) });
+  audit(req, 'payment.take', invoiceId, { method });
   res.json({ payment });
 }));
 
 // ----------------------------------------------------------------- analytics
 router.get('/analytics', asyncRoute((req, res) => {
-  const clinicId = req.query.clinicId || defaultClinic()?.id;
+  const { clinicId } = req.tenant;
   const days = Number(req.query.days ?? 30);
   const to = now();
   const from = to - days * 86_400_000;
@@ -249,7 +292,7 @@ router.get('/analytics', asyncRoute((req, res) => {
 
 // ------------------------------------------------------------------ messages
 router.get('/messages', asyncRoute((req, res) => {
-  const clinicId = req.query.clinicId || defaultClinic()?.id;
+  const { clinicId } = req.tenant;
   const clinic = db.prepare('SELECT settings FROM clinics WHERE id = ?').get(clinicId);
   res.json({
     messages: messaging.ledgerForClinic(clinicId, 150),
@@ -260,34 +303,38 @@ router.get('/messages', asyncRoute((req, res) => {
 
 // ------------------------------------------------------------------ settings
 router.get('/settings', asyncRoute((req, res) => {
-  const clinicId = req.query.clinicId || defaultClinic()?.id;
+  const { clinicId } = req.tenant;
   const clinic = db.prepare('SELECT * FROM clinics WHERE id = ?').get(clinicId);
   res.json({
     clinic: { ...clinic, settings: parse(clinic.settings, {}) },
     penalty: queue.clinicSettings(clinicId).penalty,
+    staff: db.prepare('SELECT id, name, role FROM staff WHERE clinic_id = ?').all(clinicId),
     partners: db.prepare(`SELECT p.id, p.name, pc.enabled, pc.allocation_pct, pc.can_cancel, pc.horizon_days,
-                          (SELECT COUNT(*) FROM tokens t WHERE t.partner_id = p.id) AS bookings
+                          (SELECT COUNT(*) FROM tokens t JOIN sessions s ON s.id = t.session_id
+                           WHERE t.partner_id = p.id AND s.clinic_id = ?) AS bookings
                           FROM partners p LEFT JOIN partner_clinic pc ON pc.partner_id = p.id AND pc.clinic_id = ?`)
-      .all(clinicId),
+      .all(clinicId, clinicId),
   });
 }));
 
 router.put('/settings', asyncRoute((req, res) => {
-  const clinicId = req.body?.clinicId || defaultClinic()?.id;
+  const { clinicId } = req.tenant;
+  if (req.tenant.staff.role !== 'admin') throw HttpError.forbidden('Only a clinic admin can change settings');
   const clinic = db.prepare('SELECT * FROM clinics WHERE id = ?').get(clinicId);
   const settings = { ...(parse(clinic.settings, {}) || {}), ...(req.body?.settings || {}) };
   db.prepare('UPDATE clinics SET settings = ? WHERE id = ?').run(JSON.stringify(settings), clinicId);
-  audit(clinicId, req.body?.actor, 'settings.update', clinicId, req.body?.settings);
+  audit(req, 'settings.update', clinicId, req.body?.settings);
   res.json({ ok: true, settings });
 }));
 
 /**
  * Per-partner control surface. The clinic — not us, and not the partner —
  * grants, caps and revokes access, and revocation takes effect immediately.
- * Without this, no clinic enables the API and the platform strategy stalls.
  */
 router.put('/partners/:id', asyncRoute((req, res) => {
-  const clinicId = req.body?.clinicId || defaultClinic()?.id;
+  const { clinicId } = req.tenant;
+  if (req.tenant.staff.role !== 'admin') throw HttpError.forbidden('Only a clinic admin can change partner access');
+  if (!db.prepare('SELECT 1 FROM partners WHERE id = ?').get(req.params.id)) throw HttpError.notFound('Partner');
   const { enabled = false, allocationPct = 20, canCancel = true, horizonDays = 14 } = req.body || {};
   db.prepare(`INSERT INTO partner_clinic (partner_id, clinic_id, enabled, allocation_pct, can_cancel, horizon_days)
               VALUES (?,?,?,?,?,?)
@@ -295,19 +342,18 @@ router.put('/partners/:id', asyncRoute((req, res) => {
                 enabled = excluded.enabled, allocation_pct = excluded.allocation_pct,
                 can_cancel = excluded.can_cancel, horizon_days = excluded.horizon_days`)
     .run(req.params.id, clinicId, enabled ? 1 : 0, allocationPct, canCancel ? 1 : 0, horizonDays);
-  audit(clinicId, req.body?.actor, 'partner.update', req.params.id, req.body);
+  audit(req, 'partner.update', req.params.id, req.body);
   res.json({ ok: true });
 }));
 
 router.get('/audit', asyncRoute((req, res) => {
-  const clinicId = req.query.clinicId || defaultClinic()?.id;
-  res.json({ audit: db.prepare('SELECT * FROM audit WHERE clinic_id = ? ORDER BY at DESC LIMIT 100').all(clinicId) });
+  res.json({ audit: db.prepare('SELECT * FROM audit WHERE clinic_id = ? ORDER BY at DESC LIMIT 100').all(req.tenant.clinicId) });
 }));
 
 // ------------------------------------------------------------- doctor module
 router.get('/doctor/:sessionId', asyncRoute((req, res) => {
+  own('session', req.params.sessionId, req.tenant.clinicId);
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.sessionId);
-  if (!session) throw HttpError.notFound('Session');
   const doctor = db.prepare('SELECT * FROM doctors WHERE id = ?').get(session.doctor_id);
   const projection = readProjection(session.id) ?? recompute(session.id, { notify: false })?.projection;
   const current = db.prepare(`SELECT t.*, p.name AS patient_name, p.dob, p.gender, p.payer_type
@@ -319,9 +365,9 @@ router.get('/doctor/:sessionId', asyncRoute((req, res) => {
                                ORDER BY t.seq LIMIT 6`).all(session.id).map((t) => ({ ...t, flags: parse(t.flags, []) }));
   const done = db.prepare(`SELECT COUNT(*) AS n, AVG(ended_at - started_at) AS avg FROM tokens
                            WHERE session_id = ? AND state = 'completed'`).get(session.id);
-  const lastNote = current ? db.prepare(`SELECT t.note, s.scheduled_start FROM tokens t JOIN sessions s ON s.id = t.session_id
-                          WHERE t.patient_id = ? AND t.note IS NOT NULL AND t.id != ? ORDER BY s.scheduled_start DESC LIMIT 1`)
-    .get(current.patient_id, current.id) : null;
+  const lastNote = current ? db.prepare(`SELECT t.note FROM tokens t JOIN sessions s ON s.id = t.session_id
+                          WHERE t.patient_id = ? AND s.clinic_id = ? AND t.note IS NOT NULL AND t.id != ?
+                          ORDER BY s.scheduled_start DESC LIMIT 1`).get(current.patient_id, req.tenant.clinicId, current.id) : null;
   res.json({
     session, doctor: { ...doctor, languages: parse(doctor.languages, []) },
     projection, current, upcoming, lastNote,
@@ -333,9 +379,21 @@ router.get('/doctor/:sessionId', asyncRoute((req, res) => {
 
 /** Doctor asks for a specific patient next; reception decides. One queue authority. */
 router.post('/doctor/request-next', asyncRoute((req, res) => {
-  const token = db.prepare('SELECT * FROM tokens WHERE id = ?').get(req.body?.tokenId);
-  if (!token) throw HttpError.notFound('Token');
-  const session = db.prepare('SELECT clinic_id FROM sessions WHERE id = ?').get(token.session_id);
-  audit(session.clinic_id, 'doctor', 'doctor.request_next', token.id, {});
+  own('token', req.body?.tokenId, req.tenant.clinicId);
+  const token = db.prepare('SELECT display FROM tokens WHERE id = ?').get(req.body.tokenId);
+  audit(req, 'doctor.request_next', req.body.tokenId, {});
   res.json({ ok: true, requested: token.display, note: 'Sent to reception for action.' });
+}));
+
+/** Demo: drive this clinic's evening. Scoped to the tenant like everything else. */
+router.post('/demo/run-day', asyncRoute((req, res) => {
+  const sessions = db.prepare("SELECT id FROM sessions WHERE clinic_id = ? AND state IN ('scheduled','running','paused')")
+    .all(req.tenant.clinicId);
+  for (const s of sessions) simulator.enable(s.id, req.body?.config ?? {});
+  res.json({ started: sessions.length });
+}));
+router.post('/demo/stop-day', asyncRoute((req, res) => {
+  const mine = new Set(db.prepare('SELECT id FROM sessions WHERE clinic_id = ?').all(req.tenant.clinicId).map((s) => s.id));
+  for (const s of simulator.status()) if (mine.has(s.sessionId)) simulator.disable(s.sessionId);
+  res.json({ ok: true });
 }));

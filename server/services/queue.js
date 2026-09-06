@@ -13,6 +13,7 @@ import { id, parse, HttpError } from '../lib/util.js';
 import { appendEvent, recompute, readProjection } from '../engine/engine.js';
 import { record as recordDuration, recordTurnover } from '../engine/duration-model.js';
 import { clearLog } from '../engine/materiality.js';
+import { linkPatient } from './tenancy.js';
 
 export const DEFAULT_PENALTY_POLICY = {
   gracePeriodMinutes: 5,
@@ -188,6 +189,8 @@ export function addToken({
 
   const display = nextDisplay(s);
   db.transaction(() => {
+    // A booking is how a clinic comes to know a patient exists.
+    linkPatient(s.clinic_id, patientId);
     db.prepare(`INSERT INTO tokens
       (id, session_id, patient_id, display, seq, source, partner_id, partner_reference, visit_type,
        state, flags, priority_reason, booked_at, notify_via_partner_only)

@@ -5,7 +5,7 @@ let data = null;
 let days = 30;
 
 async function load() {
-  data = await api(`/api/clinic/analytics?clinicId=${state.clinic.id}&days=${days}`);
+  data = await api(`/api/clinic/analytics?days=${days}`);
   render();
 }
 

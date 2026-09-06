@@ -166,6 +166,10 @@ export function seed({ force = false } = {}) {
     db.prepare('INSERT INTO staff (id, clinic_id, name, role, pin) VALUES (?,?,?,?,?)')
       .run(id('stf'), clinicId, name, role, '1234');
   }
+  for (const [name, role] of [['Hawwa Latheefa', 'receptionist'], ['Mohamed Latheef', 'admin']]) {
+    db.prepare('INSERT INTO staff (id, clinic_id, name, role, pin) VALUES (?,?,?,?,?)')
+      .run(id('stf'), atollClinicId, name, role, '1234');
+  }
 
   const doctorRows = [];
   for (const d of DOCTORS) {
@@ -176,11 +180,14 @@ export function seed({ force = false } = {}) {
         d.fee, d.slot, JSON.stringify(['aasandha', 'private', 'self_pay']));
     doctorRows.push(db.prepare('SELECT * FROM doctors WHERE id = ?').get(doctorId));
   }
+  const atollDoctorRows = [];
   for (const d of ATOLL_DOCTORS) {
+    const doctorId = id('doc');
     db.prepare(`INSERT INTO doctors (id, clinic_id, name, specialty, qualifications, languages, gender, fee_minor, slot_minutes, accepts_payers)
                 VALUES (?,?,?,?,?,?,?,?,?,?)`)
-      .run(id('doc'), atollClinicId, d.name, d.specialty, d.quals, JSON.stringify(d.languages), d.gender,
+      .run(doctorId, atollClinicId, d.name, d.specialty, d.quals, JSON.stringify(d.languages), d.gender,
         d.fee, d.slot, JSON.stringify(['aasandha', 'self_pay']));
+    atollDoctorRows.push(db.prepare('SELECT * FROM doctors WHERE id = ?').get(doctorId));
   }
 
   // Patients, including the two personas and a household.
@@ -188,16 +195,16 @@ export function seed({ force = false } = {}) {
   for (let i = 0; i < 120; i++) patients.push(makePatient({ travel: chance(0.12) }));
 
   const aishath = makePatient({ age: 29 });
-  db.prepare(`UPDATE patients SET name = 'Aishath Shifa', language = 'dv', payer_type = 'aasandha',
+  db.prepare(`UPDATE patients SET name = 'Aishath Shifa', gender = 'female', language = 'dv', payer_type = 'aasandha',
               wait_location = 'custom', travel_minutes = 35, efaas_verified = 1, travel_atoll = NULL, travel_island = NULL WHERE id = ?`)
     .run(aishath.id);
 
   const fathimath = makePatient({ age: 34 });
-  db.prepare(`UPDATE patients SET name = 'Fathimath Rasheedha', language = 'dv', payer_type = 'aasandha',
+  db.prepare(`UPDATE patients SET name = 'Fathimath Rasheedha', gender = 'female', language = 'dv', payer_type = 'aasandha',
               travel_atoll = 'Lh', travel_island = 'Naifaru', wait_location = 'clinic', travel_minutes = 0,
               efaas_verified = 1 WHERE id = ?`).run(fathimath.id);
   const child = makePatient({ household: fathimath.id, relation: 'child', age: 4 });
-  db.prepare(`UPDATE patients SET name = 'Ahmed Naail', travel_atoll = 'Lh', travel_island = 'Naifaru',
+  db.prepare(`UPDATE patients SET name = 'Ahmed Naail', gender = 'male', travel_atoll = 'Lh', travel_island = 'Naifaru',
               wait_location = 'clinic', travel_minutes = 0, payer_type = 'aasandha' WHERE id = ?`).run(child.id);
   db.prepare('INSERT INTO referrals (id, patient_id, from_doctor, to_specialty, note, issued_at, expires_at) VALUES (?,?,?,?,?,?,?)')
     .run(id('ref'), child.id, 'Dr. Mohamed Latheef (Naifaru Health Centre)', 'paediatrics',
@@ -269,6 +276,37 @@ export function seed({ force = false } = {}) {
           chance(0.45) ? 'new' : 'follow_up', chance(0.3) ? 'arrived' : 'booked',
           JSON.stringify(flags), demoNow - randInt(1, 96) * 3_600_000);
     }
+  }
+
+  // The island clinic gets its own evening, with its own patients — a second
+  // tenant to prove isolation against, and a real atoll demo.
+  const islanders = [];
+  for (let i = 0; i < 24; i++) islanders.push(makePatient());
+  for (let i = 0; i < atollDoctorRows.length; i++) {
+    const doctor = atollDoctorRows[i];
+    const session = createSession({
+      clinicId: atollClinicId, doctorId: doctor.id, slotMinutes: doctor.slot_minutes,
+      start: mvTime(p.year, p.month, p.day, 17, 0), end: mvTime(p.year, p.month, p.day, 19, 30),
+    });
+    const letter = String.fromCharCode(65 + i);
+    for (let k = 0; k < 7; k++) {
+      const patient = islanders[(i * 7 + k) % islanders.length];
+      db.prepare(`INSERT INTO tokens (id, session_id, patient_id, display, seq, source, visit_type, state, flags, booked_at)
+                  VALUES (?,?,?,?,?,?,?,?,?,?)`)
+        .run(id('tok'), session.id, patient.id, `${letter}-${String(k + 1).padStart(2, '0')}`, (k + 1) * 1000,
+          chance(0.5) ? 'walk_in' : 'phone', chance(0.5) ? 'new' : 'follow_up', chance(0.3) ? 'arrived' : 'booked',
+          '[]', demoNow - randInt(1, 48) * 3_600_000);
+    }
+  }
+
+  // Every clinic knows exactly the patients who have a token with it — no more.
+  db.exec(`INSERT OR IGNORE INTO clinic_patients (clinic_id, patient_id, first_seen_at)
+           SELECT DISTINCT s.clinic_id, t.patient_id, MIN(COALESCE(t.booked_at, s.scheduled_start))
+           FROM tokens t JOIN sessions s ON s.id = t.session_id GROUP BY s.clinic_id, t.patient_id`);
+  // Fathimath's child was referred from the island clinic, so it knows both of them.
+  for (const pid of [fathimath.id, child.id]) {
+    db.prepare('INSERT OR IGNORE INTO clinic_patients (clinic_id, patient_id, first_seen_at) VALUES (?,?,?)')
+      .run(atollClinicId, pid, demoNow - 4 * 86_400_000);
   }
 
   // Eligibility is checked at booking, so today's queue should already carry

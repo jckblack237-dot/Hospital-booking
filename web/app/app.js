@@ -130,7 +130,13 @@ function trackerScreen(bookingId) {
             h('span', { class: `pill ${e.predictedStart.confidence === 'high' ? 'ok' : e.predictedStart.confidence === 'low' ? 'warn' : ''}` },
               confidenceLabel(e.predictedStart.confidence)))) : null,
 
-        e && t.token.state !== 'called' ? h('div', {
+        e && t.token.state !== 'called' && (t.token.state === 'arrived' || t.patient.travelMinutes === 0)
+          ? h('div.leave-box', {},
+            h('div.title', {}, '🪑 Waiting at the clinic'),
+            h('div.sm', { style: { marginTop: '4px' } }, "We'll call your token — no need to watch the board."))
+          : null,
+
+        e && t.token.state !== 'called' && t.token.state !== 'arrived' && t.patient.travelMinutes > 0 ? h('div', {
           class: `leave-box ${e.leaveNow ? 'go' : ''}`,
         },
         h('div.title', {}, e.leaveNow ? '🚶 Leave now' : `🚶 Leave around ${hhmm(e.leaveAt)}`),
@@ -300,8 +306,11 @@ const screens = {
           h('div.section-title', { style: { marginTop: 0 } }, 'Invoices'),
           w.invoices.slice(0, 6).map((i) => h('div.spread', { style: { padding: '5px 0' } },
             h('span', {}, dayLabel(i.created_at)),
-            h('span.row', {}, h('span.mono', {}, mvr(i.patient_minor)),
-              h('span', { class: `pill ${i.state === 'paid' ? 'ok' : 'warn'}` }, i.state))))) : null,
+            h('span.row', {}, h('span.mono', {}, mvr(i.total_minor)),
+              i.patient_minor === 0 && i.state === 'paid'
+                ? h('span.pill.ok', {}, `${i.payer_type === 'aasandha' ? 'Aasandha' : i.payer_type} covered`)
+                : h('span', { class: `pill ${i.state === 'paid' ? 'ok' : 'warn'}` },
+                  i.state === 'paid' ? `you paid ${mvr(i.patient_minor)}` : `${mvr(i.patient_minor)} due`))))) : null,
 
         w.claims.some((c) => c.state === 'rejected') ? h('div.card.pad', {},
           h('div.section-title', { style: { marginTop: 0 } }, 'Claim problems'),

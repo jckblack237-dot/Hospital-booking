@@ -4,14 +4,14 @@ import { state, render } from '/clinic/app.js';
 let data = null;
 
 async function load() {
-  data = await api(`/api/clinic/settings?clinicId=${state.clinic.id}`);
+  data = await api(`/api/clinic/settings`);
   render();
 }
 
 async function savePenalty(patch) {
   const penalty = { ...data.penalty, ...patch };
   await guard(() => api('/api/clinic/settings', {
-    method: 'PUT', body: { clinicId: state.clinic.id, settings: { penalty } },
+    method: 'PUT', body: { settings: { penalty } },
   }), 'Policy saved');
   data = null;
   await load();
@@ -67,7 +67,7 @@ export function renderSettings() {
                   await guard(() => api(`/api/clinic/partners/${partner.id}`, {
                     method: 'PUT',
                     body: {
-                      clinicId: state.clinic.id, enabled: e.target.checked,
+                      enabled: e.target.checked,
                       allocationPct: partner.allocation_pct ?? 20,
                       canCancel: !!partner.can_cancel, horizonDays: partner.horizon_days ?? 14,
                     },
@@ -84,7 +84,7 @@ export function renderSettings() {
                 await guard(() => api(`/api/clinic/partners/${partner.id}`, {
                   method: 'PUT',
                   body: {
-                    clinicId: state.clinic.id, enabled: true, allocationPct: Number(e.target.value),
+                    enabled: true, allocationPct: Number(e.target.value),
                     canCancel: !!partner.can_cancel, horizonDays: partner.horizon_days ?? 14,
                   },
                 }), 'Allocation updated');
@@ -92,6 +92,12 @@ export function renderSettings() {
               },
             }, [5, 10, 20, 30, 50, 100].map((v) => h('option', { value: v, selected: v === partner.allocation_pct }, `${v}% of session`))),
             h('span.tiny.dim', {}, 'Caps how much of each session this partner can sell')) : null))),
+
+      h('div.card.pad', {},
+        h('div.section-title', { style: { marginTop: 0 } }, 'Your team'),
+        h('div.help', { style: { marginBottom: '8px' } }, 'Everyone who can sign in to this clinic. Only admins can change settings or partner access.'),
+        (data.staff || []).map((m) => h('div.spread', { style: { padding: '5px 0' } },
+          h('span', {}, m.name), h('span.pill', {}, m.role)))),
 
       h('div.card.pad', {},
         h('div.section-title', { style: { marginTop: 0 } }, 'Clinic'),
@@ -117,7 +123,7 @@ export function renderSettings() {
         h('div.section-title', { style: { marginTop: 0 } }, 'Audit'),
         h('button.btn.sm', {
           onClick: async () => {
-            const { audit } = await api(`/api/clinic/audit?clinicId=${state.clinic.id}`);
+            const { audit } = await api(`/api/clinic/audit`);
             alert(audit.slice(0, 20).map((a) => `${new Date(a.at).toISOString().slice(11, 16)} ${a.actor} ${a.action} ${a.entity ?? ''}`).join('\n') || 'No audit entries yet');
           },
         }, 'View recent audit log'))),

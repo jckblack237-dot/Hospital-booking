@@ -2,9 +2,10 @@ import { h, api, hhmm, mvr } from '/shared/core.js';
 import { state, render } from '/clinic/app.js';
 
 let data = null;
+const mvr2 = (minor) => `MVR ${((minor || 0) / 100).toFixed(2)}`;
 
 async function load() {
-  data = await api(`/api/clinic/messages?clinicId=${state.clinic.id}`);
+  data = await api(`/api/clinic/messages`);
   render();
 }
 
@@ -20,11 +21,11 @@ export function renderMessages() {
         h('div.value', { style: { color: data.walletMinor < 5000 ? 'var(--warn)' : 'inherit' } }, mvr(data.walletMinor)),
         h('div.sub', {}, 'Transactional messages continue on a small overdraft')),
       h('div.card.stat', {}, h('div.label', {}, 'Delivered'), h('div.value', {}, delivered.length)),
-      h('div.card.stat', {}, h('div.label', {}, 'Spend shown'), h('div.value', {}, mvr(spend))),
+      h('div.card.stat', {}, h('div.label', {}, 'Spend shown'), h('div.value', {}, mvr2(spend))),
       h('div.card.stat', {}, h('div.label', {}, 'Channel mix'),
         h('div.value.sm', { style: { fontSize: '15px' } },
           Object.entries(byChannel).map(([c, n]) => `${c} ${n}`).join(' · ') || '—'),
-        h('div.sub', {}, `SMS ${mvr(data.costs.sms)} · Viber ${mvr(data.costs.viber)} · push free`))),
+        h('div.sub', {}, `SMS ${mvr2(data.costs.sms)} · Viber ${mvr2(data.costs.viber)} · push free`))),
 
     h('div.card.pad', {},
       h('div.section-title', { style: { marginTop: 0 } }, 'Message ledger'),
@@ -39,7 +40,7 @@ export function renderMessages() {
           h('td', {}, h('span.pill', {}, m.template)),
           h('td', {}, h('span', { class: `pill ${m.channel === 'sms' ? 'warn' : m.channel === 'viber' ? 'violet' : 'info'}` }, m.channel)),
           h('td', {}, h('span', { class: `pill ${m.state === 'delivered' ? 'ok' : 'danger'}` }, m.state)),
-          h('td.mono', {}, m.cost_minor ? mvr(m.cost_minor) : '—'),
+          h('td.mono', {}, m.cost_minor ? mvr2(m.cost_minor) : '—'),
           h('td.sm.muted', { style: { maxWidth: '360px' } }, m.body))))))),
   );
 }

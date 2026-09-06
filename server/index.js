@@ -7,6 +7,7 @@ import { recompute } from './engine/engine.js';
 import { now } from './lib/clock.js';
 import { attach } from './realtime.js';
 import { router as clinicRouter } from './routes/clinic.js';
+import { router as authRouter } from './routes/auth.js';
 import { router as patientRouter } from './routes/patient.js';
 import { router as partnerRouter, oauth as oauthRouter } from './routes/partner.js';
 import { router as demoRouter } from './routes/demo.js';
@@ -22,6 +23,7 @@ const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '256kb' }));
 
+app.use('/api/auth', authRouter);
 app.use('/api/clinic', clinicRouter);
 app.use('/api/patient', patientRouter);
 app.use('/api/demo', demoRouter);

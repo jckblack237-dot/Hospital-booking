@@ -34,20 +34,6 @@ router.post('/clock', asyncRoute((req, res) => {
   res.json({ ...clock.state(), label: hhmm(clock.now()) });
 }));
 
-/** Turn the whole evening on: every scheduled session starts behaving like a real one. */
-router.post('/run-day', asyncRoute((req, res) => {
-  const clinicId = req.body?.clinicId || db.prepare('SELECT id FROM clinics ORDER BY rowid LIMIT 1').get()?.id;
-  const sessions = db.prepare("SELECT id FROM sessions WHERE clinic_id = ? AND state IN ('scheduled','running','paused')").all(clinicId);
-  for (const s of sessions) simulator.enable(s.id, req.body?.config ?? {});
-  if (req.body?.speed) clock.setSpeed(Number(req.body.speed));
-  res.json({ started: sessions.length, speed: clock.getSpeed() });
-}));
-
-router.post('/stop-day', asyncRoute((req, res) => {
-  for (const s of simulator.status()) simulator.disable(s.sessionId);
-  clock.setSpeed(1);
-  res.json({ ok: true });
-}));
 
 router.post('/reseed', asyncRoute((req, res) => {
   for (const s of simulator.status()) simulator.disable(s.sessionId);

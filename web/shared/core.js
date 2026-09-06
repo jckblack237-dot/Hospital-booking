@@ -30,10 +30,20 @@ export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 // ------------------------------------------------------------------- fetching
+let authToken = null;
+/** Bearer token sent with every api() call. The clinic app sets it after sign-in. */
+export function setAuth(token) {
+  authToken = token || null;
+}
+
 export async function api(path, options = {}) {
   const res = await fetch(path, {
     ...options,
-    headers: { 'content-type': 'application/json', ...(options.headers || {}) },
+    headers: {
+      'content-type': 'application/json',
+      ...(authToken ? { authorization: `Bearer ${authToken}` } : {}),
+      ...(options.headers || {}),
+    },
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
   if (res.status === 204) return null;

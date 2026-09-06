@@ -40,7 +40,7 @@ export function renderDoctor() {
   if (!data) return h('div.doctor-shell', {}, picker, h('div.empty', {}, 'Loading…'));
 
   const { session, doctor, current, upcoming, stats, runningLateMinutes, lastNote } = data;
-  const elapsed = current?.started_at ? Math.round((state.serverNow - current.started_at) / 60000) : 0;
+  const elapsedSec = current?.started_at ? Math.max(0, Math.round((state.serverNow - current.started_at) / 1000)) : 0;
   const next = upcoming[0];
 
   return h('div.doctor-shell.stack', {},
@@ -83,7 +83,7 @@ export function renderDoctor() {
                 current.visit_type === 'new' ? 'New patient' : 'Follow-up',
                 current.payer_type === 'aasandha' ? 'Aasandha' : current.payer_type].filter(Boolean).join(' · ')),
             lastNote?.note ? h('div.muted.sm', { style: { marginTop: '8px' } }, `Last note: ${lastNote.note}`) : null,
-            h('div.timer', {}, `In consultation — ${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')}`),
+            h('div.timer', {}, `In consultation — ${Math.floor(elapsedSec / 60)}:${String(elapsedSec % 60).padStart(2, '0')}`),
             h('div.doctor-actions', {},
               h('button.btn.primary', {
                 onClick: () => act(`/api/clinic/tokens/${current.id}/end`, { callNext: true }, 'Next patient called'),

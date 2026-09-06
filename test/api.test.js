@@ -11,13 +11,15 @@ const base = `http://127.0.0.1:${server.address().port}`;
 
 after(() => server.close());
 
+let staffAuth = {};
+const authFor = (path) => (path.startsWith('/api/clinic') || path.startsWith('/api/auth/logout') ? staffAuth : {});
 const get = async (path, headers) => {
-  const res = await fetch(base + path, { headers });
+  const res = await fetch(base + path, { headers: { ...authFor(path), ...(headers || {}) } });
   return { status: res.status, body: res.status === 204 ? null : await res.json().catch(() => null), res };
 };
 const post = async (path, body, headers = {}) => {
   const res = await fetch(base + path, {
-    method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body ?? {}),
+    method: 'POST', headers: { 'content-type': 'application/json', ...authFor(path), ...headers }, body: JSON.stringify(body ?? {}),
   });
   return { status: res.status, body: res.status === 204 ? null : await res.json().catch(() => null), res };
 };
@@ -39,13 +41,27 @@ async function setAllocation(pct) {
   const partner = db.prepare("SELECT id FROM partners WHERE client_id = 'pk_demo_dhoni'").get();
   await fetch(`${base}/api/clinic/partners/${partner.id}`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ clinicId, enabled: true, allocationPct: pct }),
+    headers: { 'content-type': 'application/json', ...staffAuth },
+    body: JSON.stringify({ enabled: true, allocationPct: pct }),
   });
 }
 
+async function signIn(clinicName, role = 'admin') {
+  const clinics = (await get('/api/auth/clinics')).body.clinics;
+  const clinic = clinics.find((c) => c.name === clinicName);
+  const staff = (await get(`/api/auth/clinics/${clinic.id}/staff`)).body.staff.find((s) => s.role === role);
+  const res = await fetch(`${base}/api/auth/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ clinicId: clinic.id, staffId: staff.id, pin: '1234' }),
+  });
+  const body = await res.json();
+  return { clinicId: clinic.id, token: body.token };
+}
+
 before(async () => {
-  clinicId = (await get('/api/demo/state')).body.clinicId;
+  const session = await signIn("Male' Family Clinic");
+  clinicId = session.clinicId;
+  staffAuth = { authorization: `Bearer ${session.token}` };
   token = await partnerToken('pk_demo_dhoni', 'sk_demo_dhoni_secret');
   assert.ok(token, 'partner should authenticate');
   // Give the partner headroom up front so only the dedicated cap test depends
@@ -55,7 +71,7 @@ before(async () => {
 
 // ------------------------------------------------------------------- clinic
 test('the board merges every booking source into one ordered queue', async () => {
-  const { body } = await get(`/api/clinic/board?clinicId=${clinicId}`);
+  const { body } = await get('/api/clinic/board');
   assert.ok(body.sessions.length > 0);
   const session = body.sessions[0];
   const sources = new Set(session.tokens.map((t) => t.source));
@@ -65,7 +81,7 @@ test('the board merges every booking source into one ordered queue', async () =>
 });
 
 test('a walk-in is issued a token and joins the queue', async () => {
-  const { body: board } = await get(`/api/clinic/board?clinicId=${clinicId}`);
+  const { body: board } = await get(`/api/clinic/board`);
   const session = board.sessions[0];
   const before = session.tokens.length;
   const { status, body } = await post('/api/clinic/tokens', {
@@ -73,12 +89,12 @@ test('a walk-in is issued a token and joins the queue', async () => {
   });
   assert.equal(status, 201);
   assert.match(body.token.display, /^[A-Z]-\d\d$/);
-  const { body: after } = await get(`/api/clinic/board?clinicId=${clinicId}`);
+  const { body: after } = await get(`/api/clinic/board`);
   assert.equal(after.sessions[0].tokens.length, before + 1);
 });
 
 test('drag-and-drop reordering is a single-row fractional-rank update', async () => {
-  const { body: board } = await get(`/api/clinic/board?clinicId=${clinicId}`);
+  const { body: board } = await get(`/api/clinic/board`);
   const session = board.sessions[0];
   const waiting = session.tokens.filter((t) => ['booked', 'arrived'].includes(t.state));
   const moved = waiting[3];
@@ -88,7 +104,7 @@ test('drag-and-drop reordering is a single-row fractional-rank update', async ()
   const { status } = await post(`/api/clinic/tokens/${moved.id}/reorder`, { beforeTokenId: target.id });
   assert.equal(status, 200);
 
-  const { body: after } = await get(`/api/clinic/board?clinicId=${clinicId}`);
+  const { body: after } = await get(`/api/clinic/board`);
   const rows = after.sessions[0].tokens;
   const changed = rows.filter((t) => seqsBefore.get(t.id) !== t.seq);
   assert.equal(changed.length, 1, 'exactly one row may change, whatever the queue length');
@@ -98,13 +114,13 @@ test('drag-and-drop reordering is a single-row fractional-rank update', async ()
 });
 
 test('a travel-flagged patient is never silently demoted', async () => {
-  const { body: board } = await get(`/api/clinic/board?clinicId=${clinicId}`);
+  const { body: board } = await get(`/api/clinic/board`);
   const session = board.sessions.find((s) => s.tokens.some((t) => t.flags.includes('travel')));
   if (!session) return; // seed randomness: no traveller in today's queue
   const traveller = session.tokens.find((t) => t.flags.includes('travel') && t.state !== 'completed');
   const seqBefore = traveller.seq;
   await post(`/api/clinic/tokens/${traveller.id}/penalty`, { cause: 'not_present' });
-  const { body: after } = await get(`/api/clinic/board?clinicId=${clinicId}`);
+  const { body: after } = await get(`/api/clinic/board`);
   const now = after.sessions.flatMap((s) => s.tokens).find((t) => t.id === traveller.id);
   assert.equal(now.seq, seqBefore, 'position must not change');
   assert.notEqual(now.state, 'penalised');
@@ -112,13 +128,13 @@ test('a travel-flagged patient is never silently demoted', async () => {
 });
 
 test('starting a consultation produces a live projection with a window', async () => {
-  const { body: board } = await get(`/api/clinic/board?clinicId=${clinicId}`);
+  const { body: board } = await get(`/api/clinic/board`);
   const session = board.sessions[1];
   await post(`/api/clinic/sessions/${session.id}/start`, {});
   const next = session.tokens.find((t) => ['booked', 'arrived'].includes(t.state));
   await post(`/api/clinic/tokens/${next.id}/start`, {});
 
-  const { body: after } = await get(`/api/clinic/board?clinicId=${clinicId}`);
+  const { body: after } = await get(`/api/clinic/board`);
   const s = after.sessions.find((x) => x.id === session.id);
   assert.equal(s.projection.nowServing.display, next.display);
   for (const entry of s.projection.entries) {
@@ -129,7 +145,7 @@ test('starting a consultation produces a live projection with a window', async (
 });
 
 test('ending a consultation raises an invoice with the payer split applied', async () => {
-  const { body: board } = await get(`/api/clinic/board?clinicId=${clinicId}`);
+  const { body: board } = await get(`/api/clinic/board`);
   const s = board.sessions.find((x) => x.tokens.some((t) => t.state === 'in_consult'));
   const current = s.tokens.find((t) => t.state === 'in_consult');
   const { body } = await post(`/api/clinic/tokens/${current.id}/end`, { callNext: false });
@@ -247,16 +263,16 @@ test('revoking a partner takes effect immediately', async () => {
   const partner = db.prepare("SELECT id FROM partners WHERE client_id = 'pk_demo_dhoni'").get();
   await fetch(`${base}/api/clinic/partners/${partner.id}`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ clinicId, enabled: false }),
+    headers: { 'content-type': 'application/json', ...staffAuth },
+    body: JSON.stringify({ enabled: false }),
   });
   const { body } = await get('/v1/clinics', { authorization: `Bearer ${token}` });
   assert.equal(body.data.length, 0, 'the clinic disappears from the partner the moment it is revoked');
 
   await fetch(`${base}/api/clinic/partners/${partner.id}`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ clinicId, enabled: true, allocationPct: 20 }),
+    headers: { 'content-type': 'application/json', ...staffAuth },
+    body: JSON.stringify({ enabled: true, allocationPct: 20 }),
   });
 });
 
