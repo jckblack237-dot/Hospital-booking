@@ -46,16 +46,18 @@ async function setAllocation(pct) {
   });
 }
 
+const DEMO = {
+  "Male' Family Clinic": { slug: 'male-family-clinic', password: 'lagoon-2026', admin: 'ahmed.zahir', receptionist: 'shaira' },
+  'Naifaru Health Centre': { slug: 'naifaru-health-centre', password: 'reef-2026', admin: 'mohamed.latheef', receptionist: 'hawwa' },
+};
 async function signIn(clinicName, role = 'admin') {
-  const clinics = (await get('/api/auth/clinics')).body.clinics;
-  const clinic = clinics.find((c) => c.name === clinicName);
-  const staff = (await get(`/api/auth/clinics/${clinic.id}/staff`)).body.staff.find((s) => s.role === role);
+  const d = DEMO[clinicName];
   const res = await fetch(`${base}/api/auth/login`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ clinicId: clinic.id, staffId: staff.id, pin: '1234' }),
+    body: JSON.stringify({ username: d[role], password: d.password }),
   });
   const body = await res.json();
-  return { clinicId: clinic.id, token: body.token };
+  return { clinicId: body.clinic?.id, clinic: body.clinic, token: body.token };
 }
 
 before(async () => {

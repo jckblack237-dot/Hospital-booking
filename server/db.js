@@ -13,15 +13,29 @@ export const db = new Database(file);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
-db.exec(`
+const SCHEMA = `
 CREATE TABLE IF NOT EXISTS clinics (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, atoll TEXT, island TEXT, address TEXT,
-  phone TEXT, settings TEXT NOT NULL DEFAULT '{}'
+  phone TEXT, settings TEXT NOT NULL DEFAULT '{}',
+  slug TEXT UNIQUE                                 -- the clinic's own sign-in address: /clinic/<slug>/
 );
 
+-- One account per person, per clinic. Usernames are unique within a clinic,
+-- passwords are scrypt-hashed with a per-account salt, and nothing here is
+-- ever enumerable before sign-in.
 CREATE TABLE IF NOT EXISTS staff (
   id TEXT PRIMARY KEY, clinic_id TEXT NOT NULL REFERENCES clinics(id),
-  name TEXT NOT NULL, role TEXT NOT NULL, pin TEXT NOT NULL
+  name TEXT NOT NULL, role TEXT NOT NULL,
+  username TEXT NOT NULL, password_hash TEXT NOT NULL, password_salt TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1, must_change_password INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER, last_login_at INTEGER,
+  UNIQUE (username)                               -- one username, one person, one clinic — platform-wide
+);
+
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+
+CREATE TABLE IF NOT EXISTS login_attempts (
+  key TEXT PRIMARY KEY, failures INTEGER NOT NULL DEFAULT 0, locked_until INTEGER
 );
 
 -- A signed-in staff member. Every clinic API call resolves its tenant from
@@ -252,7 +266,24 @@ CREATE TABLE IF NOT EXISTS notification_log (
   token_id TEXT NOT NULL, rule TEXT NOT NULL, at INTEGER NOT NULL,
   value TEXT, PRIMARY KEY (token_id, rule)
 );
-`);
+`;
+db.exec(SCHEMA);
+
+// Demo databases are not migrated, they are rebuilt: an older layout (the
+// PIN era, or per-clinic usernames) is dropped and the seed recreates it on
+// the next start. A real deployment would carry migrations here instead.
+const SCHEMA_VERSION = '3';
+const stored = (() => { try { return db.prepare("SELECT value FROM meta WHERE key = 'schema'").get()?.value; } catch { return null; } })();
+if (stored !== SCHEMA_VERSION) {
+  if (stored !== undefined && stored !== null) console.warn(`[db] schema ${stored} → ${SCHEMA_VERSION}: resetting demo database`);
+  db.exec('PRAGMA foreign_keys = OFF');
+  for (const row of db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all()) {
+    db.exec(`DROP TABLE IF EXISTS "${row.name}"`);
+  }
+  db.exec('PRAGMA foreign_keys = ON');
+  db.exec(SCHEMA);
+  db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema', ?)").run(SCHEMA_VERSION);
+}
 
 export function tx(fn) {
   return db.transaction(fn);

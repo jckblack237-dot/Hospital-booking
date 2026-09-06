@@ -17,10 +17,17 @@ import * as billing from '../services/billing.js';
 import * as messaging from '../services/messaging.js';
 import * as analytics from '../services/analytics.js';
 import * as simulator from '../services/simulator.js';
-import { requireStaff, own, linkPatient } from '../services/tenancy.js';
+import { requireStaff, requireAdmin, own, linkPatient, listStaff, createStaff, resetPassword, setStaffActive } from '../services/tenancy.js';
 
 export const router = express.Router();
 router.use(requireStaff);
+
+/** Clinic settings as the dashboard may see them. Demo credentials never leave the sign-in page. */
+function publicSettings(clinic) {
+  const settings = parse(clinic.settings, {}) || {};
+  delete settings.demoCredentials;
+  return settings;
+}
 
 function audit(req, action, entity, after) {
   db.prepare('INSERT INTO audit (id, clinic_id, actor, action, entity, after, at) VALUES (?,?,?,?,?,?,?)')
@@ -32,7 +39,7 @@ router.get('/bootstrap', asyncRoute((req, res) => {
   const { clinicId, staff } = req.tenant;
   const clinic = db.prepare('SELECT * FROM clinics WHERE id = ?').get(clinicId);
   res.json({
-    clinic: { ...clinic, settings: parse(clinic.settings, {}) },
+    clinic: { ...clinic, settings: publicSettings(clinic) },
     staff,
     doctors: db.prepare('SELECT * FROM doctors WHERE clinic_id = ? ORDER BY rowid').all(clinicId)
       .map((d) => ({ ...d, languages: parse(d.languages, []) })),
@@ -306,9 +313,10 @@ router.get('/settings', asyncRoute((req, res) => {
   const { clinicId } = req.tenant;
   const clinic = db.prepare('SELECT * FROM clinics WHERE id = ?').get(clinicId);
   res.json({
-    clinic: { ...clinic, settings: parse(clinic.settings, {}) },
+    clinic: { ...clinic, settings: publicSettings(clinic) },
     penalty: queue.clinicSettings(clinicId).penalty,
-    staff: db.prepare('SELECT id, name, role FROM staff WHERE clinic_id = ?').all(clinicId),
+    staff: listStaff(clinicId),
+    signInPath: `/clinic/${clinic.slug}/`,
     partners: db.prepare(`SELECT p.id, p.name, pc.enabled, pc.allocation_pct, pc.can_cancel, pc.horizon_days,
                           (SELECT COUNT(*) FROM tokens t JOIN sessions s ON s.id = t.session_id
                            WHERE t.partner_id = p.id AND s.clinic_id = ?) AS bookings
@@ -317,11 +325,35 @@ router.get('/settings', asyncRoute((req, res) => {
   });
 }));
 
-router.put('/settings', asyncRoute((req, res) => {
+// ---------------------------------------------------------------- team
+// Admins issue sign-ins to their own team. A generated password is returned
+// once, to the admin who created it, and is stored only as a hash.
+router.get('/staff', asyncRoute((req, res) => {
+  res.json({ staff: listStaff(req.tenant.clinicId) });
+}));
+router.post('/staff', requireAdmin, asyncRoute((req, res) => {
+  const { name, role = 'receptionist', username, password } = req.body || {};
+  const out = createStaff({ clinicId: req.tenant.clinicId, name, role, username, password });
+  audit(req, 'staff.create', out.staff.id, { name, role, username });
+  res.status(201).json(out);
+}));
+router.post('/staff/:id/reset-password', requireAdmin, asyncRoute((req, res) => {
+  const out = resetPassword(req.tenant.clinicId, req.params.id);
+  audit(req, 'staff.reset_password', req.params.id, {});
+  res.json(out);
+}));
+router.post('/staff/:id/active', requireAdmin, asyncRoute((req, res) => {
+  setStaffActive(req.tenant.clinicId, req.params.id, !!req.body?.active, req.tenant.staff.id);
+  audit(req, req.body?.active ? 'staff.activate' : 'staff.deactivate', req.params.id, {});
+  res.json({ ok: true });
+}));
+
+router.put('/settings', requireAdmin, asyncRoute((req, res) => {
   const { clinicId } = req.tenant;
-  if (req.tenant.staff.role !== 'admin') throw HttpError.forbidden('Only a clinic admin can change settings');
   const clinic = db.prepare('SELECT * FROM clinics WHERE id = ?').get(clinicId);
-  const settings = { ...(parse(clinic.settings, {}) || {}), ...(req.body?.settings || {}) };
+  const incoming = { ...(req.body?.settings || {}) };
+  delete incoming.demoCredentials;
+  const settings = { ...(parse(clinic.settings, {}) || {}), ...incoming };
   db.prepare('UPDATE clinics SET settings = ? WHERE id = ?').run(JSON.stringify(settings), clinicId);
   audit(req, 'settings.update', clinicId, req.body?.settings);
   res.json({ ok: true, settings });
@@ -331,9 +363,8 @@ router.put('/settings', asyncRoute((req, res) => {
  * Per-partner control surface. The clinic — not us, and not the partner —
  * grants, caps and revokes access, and revocation takes effect immediately.
  */
-router.put('/partners/:id', asyncRoute((req, res) => {
+router.put('/partners/:id', requireAdmin, asyncRoute((req, res) => {
   const { clinicId } = req.tenant;
-  if (req.tenant.staff.role !== 'admin') throw HttpError.forbidden('Only a clinic admin can change partner access');
   if (!db.prepare('SELECT 1 FROM partners WHERE id = ?').get(req.params.id)) throw HttpError.notFound('Partner');
   const { enabled = false, allocationPct = 20, canCancel = true, horizonDays = 14 } = req.body || {};
   db.prepare(`INSERT INTO partner_clinic (partner_id, clinic_id, enabled, allocation_pct, can_cancel, horizon_days)
