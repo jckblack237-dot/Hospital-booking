@@ -71,11 +71,14 @@ function tokenCard(session, token, index, list) {
   const active = ACTIVE.has(token.state);
   const draggable = active && token.state !== 'in_consult';
   const primary = primaryFor(token);
+  const isOpen = openCard === token.id;
+  const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
 
   const card = h('div', {
-    class: `tok s-${token.state}${openCard === token.id ? ' open' : ''}`,
+    class: `tok s-${token.state}${isOpen ? ' open' : ''}`,
     draggable,
     dataset: { tokenId: token.id },
+    onClick: (e) => { e.stopPropagation(); if (!active) return; openCard = isOpen ? null : token.id; render(); },
     onDragstart: (e) => { dragging = token.id; card.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', token.id); },
     onDragend: () => { dragging = null; card.classList.remove('dragging'); refreshBoard(); },
     onDragover: (e) => { if (dragging && dragging !== token.id) { e.preventDefault(); card.classList.add('drop-before'); } },
@@ -93,56 +96,51 @@ function tokenCard(session, token, index, list) {
       await refreshBoard();
     },
   },
+  // Line 1: who, and when.
   h('div.l1', {},
     h('span.badge', {}, token.display),
     h('span.name', { title: token.patient_name }, token.patient_name),
     p && WAITING.has(token.state) ? h('span.when', { title: 'Likely start' }, hhmm(p.predictedStart.window.from)) : null,
     token.state === 'in_consult' && p?.nowServing ? h('span.when', {}, `${session.projection.nowServing.elapsedMinutes} min`) : null),
 
+  // Line 2: state, a flag if there is one, and the one action that matters.
   h('div.l2', {},
     h('span', { class: `st ${token.state}` },
       STATUS[token.state] + (token.state === 'penalised' ? ` ×${token.penalty_count}` : '')),
-    token.visit_type === 'new' && active ? h('span.dim', {}, '· New patient') : null,
     flags.includes('travel') ? h('span.flag', { title: `Travelling from ${token.travel_island}` }, `✈ ${token.travel_island}`) : null,
-    flags.includes('priority') ? h('span.flag', { title: token.priority_reason }, '★ Priority') : null,
     flags.includes('needs_decision') ? h('span.flag.warn', { title: 'Travel-flagged: penalty held for your decision' }, '⚑ Your call') : null,
-    token.on_my_way ? h('span.flag', {}, '🚶 On the way') : null),
+    !flags.includes('travel') && flags.includes('priority') ? h('span.flag', { title: token.priority_reason }, '★') : null,
+    token.on_my_way && !flags.includes('travel') ? h('span.flag', {}, '🚶') : null,
+    h('span.grow'),
+    primary && active ? h('button.btn.sm.primary', { onClick: stop(() => act(token, primary[0], primary[2])) }, primary[1]) : null,
+    token.state === 'in_consult' ? h('button.btn.sm.primary', { onClick: stop(() => endConsult(token)) }, 'End & next') : null),
 
-  p && WAITING.has(token.state) ? h('div.l3', {},
+  // Everything else, one tap away.
+  isOpen && p && WAITING.has(token.state) ? h('div.detail', {},
     h('span.num', {}, `${hhmm(p.predictedStart.window.from)}–${hhmm(p.predictedStart.window.to)}`),
     confidence(p.predictedStart.confidence),
     h('span', {}, '·'), h('span', {}, p.tokensAhead > 0 ? `${p.tokensAhead} ahead` : 'Next'),
     h('span', {}, '·'), h('span', {}, SOURCE_LABELS[token.source] || token.source),
     h('span', {}, '·'), payerText(token),
+    token.visit_type === 'new' ? [h('span', {}, '·'), h('span', {}, 'New patient')] : null,
     p.atRisk ? [h('span', {}, '·'), h('span.unv', {}, 'May not be reached today')] : null,
     token.invoice?.state === 'open' ? [h('span', {}, '·'), h('span.unv', {}, 'Payment due')] : null) : null,
 
-  active ? h('div.go', {},
-    primary ? h('button.btn.sm.primary', { onClick: (e) => { e.stopPropagation(); act(token, primary[0], primary[2]); } }, primary[1]) : null,
-    token.state === 'in_consult'
-      ? h('button.btn.sm.primary', { onClick: (e) => { e.stopPropagation(); endConsult(token); } }, 'End & call next') : null,
-    token.state === 'booked'
-      ? h('button.btn.sm', { onClick: (e) => { e.stopPropagation(); act(token, 'call', `${token.display} called`); } }, 'Call') : null,
-    ['arrived', 'penalised'].includes(token.state)
-      ? h('button.btn.sm', { onClick: (e) => { e.stopPropagation(); act(token, 'start', 'Consultation started'); } }, 'Start') : null,
-    h('button.btn.sm.ghost', {
-      title: 'More', style: { flex: '0 0 auto' },
-      onClick: (e) => { e.stopPropagation(); openCard = openCard === token.id ? null : token.id; render(); },
-    }, openCard === token.id ? '▴' : '⋯')) : null,
-
-  openCard === token.id ? h('div.more', {},
+  isOpen && active ? h('div.more', {},
+    token.state === 'booked' ? h('button.btn.sm', { onClick: stop(() => act(token, 'call', `${token.display} called`)) }, 'Call') : null,
+    ['arrived', 'penalised', 'booked'].includes(token.state) ? h('button.btn.sm', { onClick: stop(() => act(token, 'start', 'Consultation started')) }, 'Start') : null,
     token.penalty_count > 0 || flags.includes('needs_decision')
-      ? h('button.btn.sm', { onClick: () => act(token, 'revoke-penalty', 'Penalty undone') }, 'Undo penalty')
-      : h('button.btn.sm', { onClick: () => act(token, 'penalty', 'Moved back') }, 'Apply penalty'),
-    h('button.btn.sm', { onClick: () => act(token, 'no-show', 'Marked as not attending') }, 'Did not attend'),
-    h('button.btn.sm.danger', { onClick: () => act(token, 'cancel', 'Cancelled') }, 'Cancel'),
-    state.board.sessions.filter((s) => s.id !== session.id && ['scheduled', 'running', 'paused'].includes(s.state)).map((s) =>
+      ? h('button.btn.sm', { onClick: stop(() => act(token, 'revoke-penalty', 'Penalty undone')) }, 'Undo penalty')
+      : token.state !== 'in_consult' ? h('button.btn.sm', { onClick: stop(() => act(token, 'penalty', 'Moved back')) }, 'Move back') : null,
+    token.state !== 'in_consult' ? h('button.btn.sm', { onClick: stop(() => act(token, 'no-show', 'Marked as not attending')) }, 'Did not attend') : null,
+    h('button.btn.sm.danger', { onClick: stop(() => act(token, 'cancel', 'Cancelled')) }, 'Cancel'),
+    token.state !== 'in_consult' ? state.board.sessions.filter((s) => s.id !== session.id && ['scheduled', 'running', 'paused'].includes(s.state)).map((s) =>
       h('button.btn.sm.ghost', {
-        onClick: () => guard(async () => {
+        onClick: stop(() => guard(async () => {
           await call(() => api(`/api/clinic/tokens/${token.id}/reassign`, { method: 'POST', body: { sessionId: s.id } }));
           openCard = null; await refreshBoard();
-        }, `Moved to ${s.doctor_name}`),
-      }, `→ ${s.doctor_name.replace('Dr. ', '')}`))) : null,
+        }, `Moved to ${s.doctor_name}`)),
+      }, `→ ${s.doctor_name.replace('Dr. ', '')}`)) : null) : null,
   );
   return card;
 }
@@ -181,40 +179,44 @@ function sessionColumn(session) {
   const pause = p?.pause;
   const notStartedLate = session.state === 'scheduled'
     ? Math.round((state.serverNow - session.scheduled_start - (session.delay_minutes || 0) * 60000) / 60000) : 0;
-  const worst = Math.max(late, notStartedLate);
 
-  let chipText;
-  let chipClass = 'ok';
-  if (session.state === 'ended') { chipText = 'Finished'; chipClass = ''; }
-  else if (session.state === 'cancelled') { chipText = 'Cancelled'; chipClass = ''; }
-  else if (session.state === 'paused' || pause) { chipText = `Paused · ${pause?.kind ?? 'break'}${pause?.expectedResumeAt ? ` until ${hhmm(pause.expectedResumeAt)}` : ''}`; chipClass = 'warn'; }
-  else if (session.state === 'running') { chipText = late > 5 ? `Running ${late} min late` : 'On time'; chipClass = late > 15 ? 'danger' : late > 5 ? 'warn' : 'ok'; }
-  else if (notStartedLate > 2) { chipText = `Not started · ${notStartedLate} min late`; chipClass = notStartedLate > 15 ? 'danger' : 'warn'; }
-  else { chipText = `Starts ${hhmm(session.scheduled_start + (session.delay_minutes || 0) * 60000)}`; chipClass = ''; }
+  let statusText;
+  let statusClass = 'ok';
+  if (session.state === 'ended') { statusText = 'Finished'; statusClass = ''; }
+  else if (session.state === 'cancelled') { statusText = 'Cancelled'; statusClass = ''; }
+  else if (session.state === 'paused' || pause) { statusText = `Paused${pause?.expectedResumeAt ? ` until ${hhmm(pause.expectedResumeAt)}` : ''}`; statusClass = 'warn'; }
+  else if (session.state === 'running') { statusText = late > 5 ? `${late} min late` : 'On time'; statusClass = late > 15 ? 'danger' : late > 5 ? 'warn' : 'ok'; }
+  else if (notStartedLate > 2) { statusText = `Not started · ${notStartedLate} min late`; statusClass = notStartedLate > 15 ? 'danger' : 'warn'; }
+  else { statusText = `Starts ${hhmm(session.scheduled_start + (session.delay_minutes || 0) * 60000)}`; statusClass = ''; }
 
   const inConsult = session.tokens.find((t) => t.state === 'in_consult');
   const waiting = session.tokens.filter((t) => WAITING.has(t.state));
   const done = session.tokens.filter((t) => ['completed', 'no_show', 'cancelled'].includes(t.state));
   const open = ['scheduled', 'running', 'paused'].includes(session.state);
 
-  return h('section.col', { style: { position: 'relative' } },
+  const sessionButton = session.state === 'scheduled'
+    ? h('button.btn.sm.primary', { onClick: () => sessionAct(session, 'start', 'Session started') }, 'Start session')
+    : session.state === 'running'
+      ? h('button.btn.sm', { onClick: () => sessionAct(session, 'pause', 'Paused — everyone waiting has been told', { kind: 'break', expectedMinutes: 15 }) }, 'Pause')
+      : session.state === 'paused'
+        ? h('button.btn.sm.primary', { onClick: () => sessionAct(session, 'resume', 'Resumed') }, 'Resume')
+        : null;
+
+  return h('section.col', {},
     h('header', {},
-      h('div.who', {},
-        h('span.av', {}, initials(session.doctor_name)),
-        h('span.grow', {}, h('div.doc', {}, session.doctor_name), h('div.spec', {}, session.specialty.replace('_', ' '))),
-        session.simulating ? h('span.pill.brand', { title: 'A simulated doctor is driving this session' }, 'SIM') : null),
-      h('div.status', {},
-        h('span', { class: `chip ${chipClass}` }, h('span.dot'), chipText),
-        h('span.dim.sm', {}, `${waiting.length} waiting`)),
-      inConsult
-        ? h('div.serving', {}, h('span', {}, 'In the room ', h('strong', {}, inConsult.display)),
-          h('span', {}, `${p?.nowServing?.elapsedMinutes ?? 0} min${p?.nowServing?.overrunning ? ' · running over' : ''}`))
-        : h('div.serving.none', {}, open ? 'Room is free' : 'No one in the room'),
-      open ? h('div.acts', {},
-        session.state === 'scheduled' ? h('button.btn.primary', { onClick: () => sessionAct(session, 'start', 'Session started') }, 'Start session') : null,
-        session.state === 'running' ? h('button.btn', { onClick: () => sessionAct(session, 'pause', 'Paused — everyone waiting has been told', { kind: 'break', expectedMinutes: 15 }) }, 'Pause') : null,
-        session.state === 'paused' ? h('button.btn.primary', { onClick: () => sessionAct(session, 'resume', 'Resumed') }, 'Resume') : null,
-        h('button.btn.kebab', { onClick: () => { openMenu = openMenu === session.id ? null : session.id; render(); }, title: 'More' }, '⋯')) : null,
+      h('div.doc', {},
+        h('span.truncate', { title: session.doctor_name }, session.doctor_name),
+        h('span.spec', {}, session.specialty.replace('_', ' ')),
+        h('span.grow'),
+        session.simulating ? h('span.pill.brand', { title: 'A simulated doctor is driving this session' }, 'SIM') : null,
+        open ? h('button.btn.sm.ghost', { style: { padding: '2px 8px' }, onClick: () => { openMenu = openMenu === session.id ? null : session.id; render(); }, title: 'More' }, '⋯') : null),
+      h('div', { class: `status ${statusClass}` },
+        h('span.dot'), h('b', {}, statusText), h('span', {}, `· ${waiting.length} waiting`)),
+      h('div.serving', {},
+        inConsult
+          ? h('span', {}, 'In the room ', h('strong', {}, inConsult.display), ` · ${p?.nowServing?.elapsedMinutes ?? 0} min${p?.nowServing?.overrunning ? ' · over' : ''}`)
+          : h('span', {}, open ? 'Room is free' : 'Nothing more today'),
+        sessionButton),
       openMenu === session.id ? h('div.menu', {},
         h('button', { onClick: () => delaySession(session) }, 'Doctor is running late…'),
         h('button', { onClick: () => broadcast(session) }, 'Message everyone waiting…'),
@@ -247,9 +249,9 @@ function sessionColumn(session) {
     },
     inConsult ? tokenCard(session, inConsult, -1, waiting) : null,
     waiting.map((t, i) => tokenCard(session, t, i, waiting)),
-    !waiting.length && !inConsult ? h('div.empty', {}, open ? 'Nobody waiting. Drag a card here, or add a walk-in.' : 'Nothing more today.') : null,
+    !waiting.length && !inConsult ? h('div.empty', {}, open ? 'Nobody waiting' : '') : null,
     done.length ? h('details', {},
-      h('summary.done-sum', {}, `${done.length} seen or gone today`),
+      h('summary.done-sum', {}, `${done.length} seen or gone`),
       h('div.stack', { style: { marginTop: '8px' } }, done.map((t) => tokenCard(session, t, -1, [])))) : null),
   );
 }
@@ -259,22 +261,15 @@ export function renderBoard() {
   if (!sessions.length) {
     return h('div.empty', {}, h('div.big', {}, 'No sessions today'), h('div.help', {}, 'Sessions are set up under Settings → Schedule.'));
   }
-  return h('div.board', {},
+  return h('div.board', { onClick: () => { if (openCard) { openCard = null; render(); } } },
     sessions.map(sessionColumn),
     h('section.col.add', {},
       h('header', {},
-        h('div.who', {}, h('span.grow', {}, h('div.doc', {}, 'Add someone'), h('div.spec', {}, 'Walk-ins and phone bookings'))),
-        h('div.acts', {},
-          h('button.btn.primary', { onClick: () => openWalkIn() }, '+ Walk-in'),
-          h('button.btn', { onClick: () => openWalkIn('phone') }, '+ Phone'))),
-      h('div.list', {},
-        h('div.help', { style: { padding: '4px 6px' } },
-          h('p', { style: { margin: '0 0 8px' } }, 'Drag a card to move someone up, down, or to another doctor.'),
-          h('p', { style: { margin: '0 0 8px' } }, 'Press ', h('kbd', {}, 'W'), ' to add a walk-in, ', h('kbd', {}, '⌘K'), ' to find anyone.'),
-          h('p', { style: { margin: 0 } }, 'Coloured edge: ', h('span', { style: { color: 'var(--here)', fontWeight: 700 } }, 'green'), ' here · ',
-            h('span', { style: { color: 'var(--called)', fontWeight: 700 } }, 'amber'), ' called · ',
-            h('span', { style: { color: 'var(--brand-deep)', fontWeight: 700 } }, 'teal'), ' in the room · ',
-            h('span', { style: { color: 'var(--back)', fontWeight: 700 } }, 'red'), ' moved back.')))));
+        h('div.doc', {}, h('span', {}, 'Add someone')),
+        h('div.status', {}, h('span', {}, 'Walk-in or phone booking')),
+        h('div.serving', { style: { gap: '6px' } },
+          h('button.btn.sm.primary', { onClick: () => openWalkIn() }, '+ Walk-in'),
+          h('button.btn.sm', { onClick: () => openWalkIn('phone') }, '+ Phone')))));
 }
 
 // -------------------------------------------------------------- walk-in modal
