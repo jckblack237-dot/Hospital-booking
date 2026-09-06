@@ -1,0 +1,92 @@
+/* Vaguthu design tokens. Light is the default; dark follows the OS or an
+   explicit data-theme. Every colour has its definition on :root so nothing
+   depends on a media query being matched. */
+:root {
+  --brand: #0a9396;
+  --brand-deep: #04656b;
+  --brand-soft: #d5f0f0;
+  --lagoon: #63c5c0;
+  --sand: #f4efe4;
+
+  --bg: #f6f7f7;
+  --surface: #ffffff;
+  --surface-2: #f0f2f2;
+  --surface-3: #e6eaea;
+  --border: #dbe1e1;
+  --border-strong: #c2cccc;
+
+  --text: #14201f;
+  --text-2: #4a5c5b;
+  --text-3: #7b8b8a;
+
+  --ok: #1a8a5a;
+  --ok-bg: #e2f5eb;
+  --warn: #a86a06;
+  --warn-bg: #fdf0d9;
+  --danger: #c33b3b;
+  --danger-bg: #fbe6e6;
+  --info: #2f62d1;
+  --info-bg: #e5edfd;
+  --violet: #6b4fc4;
+  --violet-bg: #ece7fb;
+
+  --radius: 10px;
+  --radius-lg: 16px;
+  --shadow: 0 1px 2px rgba(16, 32, 32, .06), 0 4px 14px rgba(16, 32, 32, .06);
+  --shadow-lg: 0 8px 32px rgba(16, 32, 32, .14);
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --thaana: "MV Faseyha", "A_Faruma", "MV Boli", var(--sans);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --brand: #2bb8b4;
+    --brand-deep: #7fd6d2;
+    --brand-soft: #123536;
+    --sand: #241f16;
+
+    --bg: #0b1214;
+    --surface: #111a1c;
+    --surface-2: #172225;
+    --surface-3: #1f2c30;
+    --border: #253336;
+    --border-strong: #33474b;
+
+    --text: #e8f0ef;
+    --text-2: #a4b6b5;
+    --text-3: #748887;
+
+    --ok: #4fc98c;      --ok-bg: #102a1f;
+    --warn: #e0a33c;    --warn-bg: #2c2211;
+    --danger: #f07070;  --danger-bg: #2e1616;
+    --info: #7ba4f5;    --info-bg: #141d33;
+    --violet: #a08ce8;  --violet-bg: #1e1836;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.3);
+    --shadow-lg: 0 10px 40px rgba(0,0,0,.5);
+  }
+}
+
+:root[data-theme="dark"] {
+  --brand: #2bb8b4; --brand-deep: #7fd6d2; --brand-soft: #123536; --sand: #241f16;
+  --bg: #0b1214; --surface: #111a1c; --surface-2: #172225; --surface-3: #1f2c30;
+  --border: #253336; --border-strong: #33474b;
+  --text: #e8f0ef; --text-2: #a4b6b5; --text-3: #748887;
+  --ok: #4fc98c; --ok-bg: #102a1f; --warn: #e0a33c; --warn-bg: #2c2211;
+  --danger: #f07070; --danger-bg: #2e1616; --info: #7ba4f5; --info-bg: #141d33;
+  --violet: #a08ce8; --violet-bg: #1e1836;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.3);
+  --shadow-lg: 0 10px 40px rgba(0,0,0,.5);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: var(--sans); font-size: 14px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+[dir="rtl"] { font-family: var(--thaana); }
+a { color: var(--brand-deep); }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
