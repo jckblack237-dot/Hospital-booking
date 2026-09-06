@@ -1,0 +1,517 @@
+openapi: 3.1.0
+info:
+  title: Vaguthu Partner API
+  version: "2026-09-01"
+  summary: Booking and live queue state for Maldivian clinics.
+  description: >
+    Machine-readable sketch of the contract described in
+    docs/05-partner-api-and-webhooks.md. Illustrative, not exhaustive —
+    the prose document is authoritative on semantics (delivery guarantees,
+    ordering, materiality rules, and the clinic-side control surface).
+servers:
+  - url: https://api.vaguthu.mv/v1
+    description: Production
+  - url: https://sandbox.api.vaguthu.mv/v1
+    description: Sandbox (scriptable delays, pauses, overruns, no-shows)
+
+security:
+  - oauth2: [clinics:read, slots:read, bookings:write, bookings:read, queue:read, queue:subscribe]
+
+tags:
+  - name: Discovery
+  - name: Availability
+  - name: Bookings
+  - name: Queue
+  - name: Webhooks
+
+paths:
+  /clinics:
+    get:
+      tags: [Discovery]
+      summary: List clinics
+      parameters:
+        - { name: atoll,     in: query, schema: { type: string, example: "K" } }
+        - { name: island,    in: query, schema: { type: string, example: "Male" } }
+        - { name: specialty, in: query, schema: { type: string } }
+        - { name: language,  in: query, schema: { type: string, example: "dv" } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Clinic' } }
+                  next_cursor: { type: [string, "null"] }
+
+  /doctors/{doctor_id}:
+    get:
+      tags: [Discovery]
+      summary: Get a doctor
+      parameters: [ { $ref: '#/components/parameters/DoctorId' } ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Doctor' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /doctors/{doctor_id}/availability:
+    get:
+      tags: [Availability]
+      summary: Bookable sessions and slots
+      description: Cacheable for 30s. Prefer the `slot.availability.changed` webhook over polling.
+      parameters:
+        - { $ref: '#/components/parameters/DoctorId' }
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to,   in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: OK
+          headers:
+            ETag:          { schema: { type: string } }
+            Cache-Control: { schema: { type: string, example: "max-age=30" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  doctor_id: { type: string }
+                  sessions:
+                    type: array
+                    items: { $ref: '#/components/schemas/Session' }
+
+  /holds:
+    post:
+      tags: [Bookings]
+      summary: Soft-lock a slot (phase 1 of 2)
+      description: Holds expire after 120 seconds. Prevents double-booking across partners.
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slot_id]
+              properties:
+                slot_id:           { type: string }
+                partner_reference: { type: string }
+      responses:
+        '201':
+          description: Held
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  hold_id:    { type: string }
+                  expires_at: { type: string, format: date-time }
+        '409':
+          $ref: '#/components/responses/SlotUnavailable'
+
+  /bookings:
+    post:
+      tags: [Bookings]
+      summary: Confirm a held slot (phase 2 of 2)
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BookingRequest' }
+      responses:
+        '201':
+          description: Confirmed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '409': { $ref: '#/components/responses/SlotUnavailable' }
+        '422': { $ref: '#/components/responses/Problem' }
+
+  /bookings/{booking_id}:
+    parameters: [ { $ref: '#/components/parameters/BookingId' } ]
+    get:
+      tags: [Bookings]
+      summary: Get a booking created by this partner
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/Booking' } } }
+        '404': { $ref: '#/components/responses/Problem' }
+    patch:
+      tags: [Bookings]
+      summary: Reschedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                hold_id: { type: string, description: A new hold for the target slot }
+      responses:
+        '200':
+          description: Rescheduled
+          content: { application/json: { schema: { $ref: '#/components/schemas/Booking' } } }
+    delete:
+      tags: [Bookings]
+      summary: Cancel
+      responses:
+        '204': { description: Cancelled }
+
+  /sessions/{session_id}/queue:
+    get:
+      tags: [Queue]
+      summary: Live queue state
+      description: >
+        Aggregate queue facts plus per-token detail for THIS PARTNER'S bookings only.
+        Other patients are never identified. Send If-None-Match to avoid re-transfer.
+      parameters:
+        - { $ref: '#/components/parameters/SessionId' }
+        - { name: If-None-Match, in: header, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/QueueState' } } }
+        '304': { description: Not modified }
+
+  /stream/sessions/{session_id}:
+    get:
+      tags: [Queue]
+      summary: Server-Sent Events stream of queue updates
+      description: >
+        Emits `queue.updated` frames carrying a QueueState with a monotonic `version`.
+        Reconnect with Last-Event-ID to replay from a 15-minute buffer.
+      parameters:
+        - { $ref: '#/components/parameters/SessionId' }
+        - { name: Last-Event-ID, in: header, schema: { type: string } }
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema: { type: string }
+
+  /webhook_endpoints:
+    post:
+      tags: [Webhooks]
+      summary: Create a webhook subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, events]
+              properties:
+                url:        { type: string, format: uri }
+                events:     { type: array, items: { $ref: '#/components/schemas/EventType' } }
+                clinic_ids: { type: array, items: { type: string } }
+      responses:
+        '201':
+          description: Created. `signing_secret` is shown once and never again.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:             { type: string }
+                  signing_secret: { type: string }
+
+  /webhook_endpoints/{endpoint_id}/replay:
+    post:
+      tags: [Webhooks]
+      summary: Replay historical events
+      parameters:
+        - { name: endpoint_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from:  { type: string, format: date-time }
+                to:    { type: string, format: date-time }
+                types: { type: array, items: { $ref: '#/components/schemas/EventType' } }
+      responses:
+        '202': { description: Replay accepted }
+
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://api.vaguthu.mv/oauth/token
+          scopes:
+            clinics:read:       Clinic and doctor directory
+            slots:read:         Availability
+            bookings:write:     Create, reschedule, cancel own bookings
+            bookings:read:      Read own bookings
+            queue:read:         Live queue state
+            queue:subscribe:    Webhooks and SSE
+            payments:initiate:  Payment links for own bookings
+            insurance:verify:   Payer eligibility pre-check (separate agreement)
+
+  parameters:
+    Limit:   { name: limit,  in: query, schema: { type: integer, default: 25, maximum: 100 } }
+    Cursor:  { name: cursor, in: query, schema: { type: string } }
+    DoctorId:  { name: doctor_id,  in: path, required: true, schema: { type: string } }
+    BookingId: { name: booking_id, in: path, required: true, schema: { type: string } }
+    SessionId: { name: session_id, in: path, required: true, schema: { type: string } }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string }
+      description: Retained 24h. A replay returns the original response.
+
+  responses:
+    Problem:
+      description: RFC 9457 problem details
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    SlotUnavailable:
+      description: Slot taken. Body includes `alternatives` so the partner can recover in-flow.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - { $ref: '#/components/schemas/Problem' }
+              - type: object
+                properties:
+                  alternatives:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        slot_id:    { type: string }
+                        starts_at:  { type: string, format: date-time }
+
+  schemas:
+    Money:
+      type: object
+      properties:
+        amount:   { type: integer, description: Minor units, example: 40000 }
+        currency: { type: string, example: "MVR" }
+
+    Clinic:
+      type: object
+      properties:
+        id:     { type: string }
+        name:   { type: string }
+        atoll:  { type: string }
+        island: { type: string }
+        address: { type: string }
+        languages: { type: array, items: { type: string } }
+        accepts_payers: { type: array, items: { type: string } }
+
+    Doctor:
+      type: object
+      description: >
+        Never carries punctuality, lateness history, or ranked durations —
+        a commitment made to doctors in the clinic product and enforced at this boundary.
+      properties:
+        id:   { type: string }
+        name: { type: string }
+        specialties: { type: array, items: { type: string } }
+        languages:   { type: array, items: { type: string } }
+        gender:      { type: string }
+        clinics:     { type: array, items: { $ref: '#/components/schemas/Clinic' } }
+        consultation_fee: { $ref: '#/components/schemas/Money' }
+        accepts_payers:   { type: array, items: { type: string } }
+        next_available:   { type: string, format: date-time }
+        typical_consultation_minutes: { type: integer }
+
+    Session:
+      type: object
+      properties:
+        session_id: { type: string }
+        clinic_id:  { type: string }
+        starts_at:  { type: string, format: date-time }
+        ends_at:    { type: string, format: date-time }
+        slots:      { type: array, items: { $ref: '#/components/schemas/Slot' } }
+        partner_allocation:
+          type: object
+          description: Per-partner capacity cap set by the clinic.
+          properties:
+            total:     { type: integer }
+            used:      { type: integer }
+            remaining: { type: integer }
+
+    Slot:
+      type: object
+      properties:
+        slot_id:          { type: string }
+        starts_at:        { type: string, format: date-time }
+        duration_minutes: { type: integer }
+        status:           { type: string, enum: [available, held, booked, blocked] }
+        held_until:       { type: string, format: date-time }
+
+    PredictedStart:
+      type: object
+      description: Always a window. Point estimates are never published to patients.
+      properties:
+        p50: { type: string, format: date-time }
+        p80_window:
+          type: object
+          properties:
+            from: { type: string, format: date-time }
+            to:   { type: string, format: date-time }
+        confidence: { type: string, enum: [high, medium, low] }
+
+    BookingRequest:
+      type: object
+      required: [hold_id, patient]
+      properties:
+        hold_id: { type: string }
+        patient:
+          type: object
+          required: [name, phone]
+          properties:
+            external_id:   { type: string }
+            name:          { type: string }
+            phone:         { type: string }
+            national_id:   { type: string }
+            date_of_birth: { type: string, format: date }
+            language:      { type: string, enum: [dv, en, hi, bn, si, tl] }
+            travel_origin:
+              type: object
+              description: Sets the travel flag — exempts the token from automatic delay penalties.
+              properties:
+                atoll:  { type: string }
+                island: { type: string }
+        visit_type: { type: string, enum: [new, follow_up, procedure, review] }
+        payer:
+          type: object
+          properties:
+            type:      { type: string, enum: [aasandha, private, corporate, self_pay] }
+            insurer:   { type: string }
+            policy_no: { type: string }
+        notify_via_partner_only:
+          type: boolean
+          default: false
+          description: >
+            Suppresses Vaguthu's own patient messaging. Partners setting this MUST relay
+            queue.token.* events to their users; compliance is audited.
+
+    Booking:
+      type: object
+      properties:
+        booking_id: { type: string }
+        status:     { type: string, enum: [confirmed, cancelled, completed, no_show] }
+        token:
+          type: object
+          properties:
+            id:         { type: string }
+            display:    { type: string, example: "A-15" }
+            session_id: { type: string }
+        predicted_start: { $ref: '#/components/schemas/PredictedStart' }
+        queue:
+          type: object
+          properties:
+            position:    { type: integer }
+            tokens_ahead: { type: integer }
+        payment:
+          type: object
+          properties:
+            required:     { type: boolean }
+            amount:       { $ref: '#/components/schemas/Money' }
+            payment_link: { type: string, format: uri }
+        cancellation_policy:
+          type: object
+          properties:
+            free_until: { type: string, format: date-time }
+
+    QueueState:
+      type: object
+      properties:
+        session_id:   { type: string }
+        version:      { type: integer, description: Monotonic per session. Discard lower versions. }
+        computed_at:  { type: string, format: date-time }
+        state:        { type: string, enum: [scheduled, running, paused, ended, cancelled] }
+        running_late_minutes: { type: integer }
+        pause:
+          type: object
+          properties:
+            reason:            { type: string, enum: [prayer, emergency, break, admin, other] }
+            expected_resume_at: { type: string, format: date-time }
+        now_serving:
+          type: object
+          description: Token display code only. Never a patient identity.
+          properties:
+            display:    { type: string }
+            started_at: { type: string, format: date-time }
+        tokens_waiting: { type: integer }
+        your_bookings:
+          type: array
+          items:
+            type: object
+            properties:
+              booking_id:      { type: string }
+              token_display:   { type: string }
+              state:           { type: string, enum: [booked, arrived, called, in_consult, completed, no_show, penalised] }
+              tokens_ahead:    { type: integer }
+              predicted_start: { $ref: '#/components/schemas/PredictedStart' }
+              leave_now:       { type: boolean }
+
+    EventType:
+      type: string
+      enum:
+        - slot.availability.changed
+        - slot.session.published
+        - booking.confirmed
+        - booking.rescheduled
+        - booking.cancelled
+        - booking.payment_required
+        - queue.session.started
+        - queue.session.delayed
+        - queue.session.paused
+        - queue.session.resumed
+        - queue.session.cancelled
+        - queue.token.now_serving
+        - queue.token.eta_changed
+        - queue.token.leave_now
+        - queue.token.next
+        - queue.token.called
+        - queue.token.penalised
+        - queue.token.no_show
+        - queue.token.completed
+        - queue.token.at_risk
+        - payment.succeeded
+        - payment.failed
+        - payment.refunded
+        - insurance.eligibility.result
+        - claim.status.changed
+
+    WebhookEnvelope:
+      type: object
+      description: >
+        Delivered with header X-Vaguthu-Signature: t=<unix>,v1=<HMAC-SHA256(secret, "{t}.{body}")>.
+        At-least-once delivery; ordering is NOT guaranteed — use `sequence` per session.
+      properties:
+        id:          { type: string, example: "evt_01J8XQ" }
+        type:        { $ref: '#/components/schemas/EventType' }
+        created_at:  { type: string, format: date-time }
+        expires_at:  { type: string, format: date-time, description: Drop expired queue.token.* events. }
+        api_version: { type: string, example: "2026-09-01" }
+        clinic_id:   { type: string }
+        session_id:  { type: string }
+        sequence:    { type: integer }
+        data:        { type: object }
+
+    Problem:
+      type: object
+      properties:
+        type:       { type: string, format: uri }
+        title:      { type: string }
+        status:     { type: integer }
+        detail:     { type: string }
+        instance:   { type: string }
+        request_id: { type: string }
