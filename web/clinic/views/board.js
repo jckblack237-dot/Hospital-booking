@@ -134,13 +134,17 @@ function tokenCard(session, token, index, list) {
       : token.state !== 'in_consult' ? h('button.btn.sm', { onClick: stop(() => act(token, 'penalty', 'Moved back')) }, 'Move back') : null,
     token.state !== 'in_consult' ? h('button.btn.sm', { onClick: stop(() => act(token, 'no-show', 'Marked as not attending')) }, 'Did not attend') : null,
     h('button.btn.sm.danger', { onClick: stop(() => act(token, 'cancel', 'Cancelled')) }, 'Cancel'),
-    token.state !== 'in_consult' ? state.board.sessions.filter((s) => s.id !== session.id && ['scheduled', 'running', 'paused'].includes(s.state)).map((s) =>
-      h('button.btn.sm.ghost', {
-        onClick: stop(() => guard(async () => {
-          await call(() => api(`/api/clinic/tokens/${token.id}/reassign`, { method: 'POST', body: { sessionId: s.id } }));
-          openCard = null; await refreshBoard();
-        }, `Moved to ${s.doctor_name}`)),
-      }, `→ ${s.doctor_name.replace('Dr. ', '')}`)) : null) : null,
+    token.state !== 'in_consult' ? h('select.input', {
+      style: { width: 'auto', padding: '5px 9px', fontSize: '13px' },
+      onClick: (e) => e.stopPropagation(),
+      onChange: (e) => guard(async () => {
+        if (!e.target.value) return;
+        await call(() => api(`/api/clinic/tokens/${token.id}/reassign`, { method: 'POST', body: { sessionId: e.target.value } }));
+        openCard = null; await refreshBoard();
+      }, 'Moved'),
+    }, h('option', { value: '' }, 'Move to…'),
+    state.board.sessions.filter((s) => s.id !== session.id && ['scheduled', 'running', 'paused'].includes(s.state))
+      .map((s) => h('option', { value: s.id }, s.doctor_name))) : null) : null,
   );
   return card;
 }
