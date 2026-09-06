@@ -1,0 +1,18 @@
+# One-click deploy on Render: connect the repo, Render reads this file.
+services:
+  - type: web
+    name: vaguthu
+    runtime: docker
+    plan: starter
+    healthCheckPath: /healthz
+    envVars:
+      - key: PORT
+        value: "3000"
+      - key: VAGUTHU_DATA_DIR
+        value: /data
+      - key: VAGUTHU_DEMO
+        value: "true"
+    disk:
+      name: vaguthu-data
+      mountPath: /data
+      sizeGB: 1
