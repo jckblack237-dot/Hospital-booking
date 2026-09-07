@@ -16,6 +16,7 @@ import * as notify from './services/notify.js';
 import * as queueService from './services/queue.js';
 import * as scheduling from './services/scheduling.js';
 import * as simulator from './services/simulator.js';
+import * as autopilot from './services/autopilot.js';
 import * as webhooks from './services/webhooks.js';
 import { seed } from './seed.js';
 
@@ -68,6 +69,9 @@ if (!db.prepare('SELECT COUNT(*) AS c FROM clinics').get().c) {
   console.log('[boot] empty database — seeding demo data');
   seed({ force: true });
 }
+// In demo mode the evening runs by itself — nobody should open the board and
+// find it frozen because a deploy dropped the simulator.
+autopilot.boot();
 
 /**
  * The ticker. Everything time-driven lives here so there is exactly one place
@@ -76,6 +80,7 @@ if (!db.prepare('SELECT COUNT(*) AS c FROM clinics').get().c) {
  */
 const ticker = setInterval(async () => {
   try {
+    autopilot.tick();
     simulator.tick();
     // Time-driven rules — "leave now", at-risk, and the staleness watchdog —
     // need a heartbeat. An event-only engine never tells anyone to leave.

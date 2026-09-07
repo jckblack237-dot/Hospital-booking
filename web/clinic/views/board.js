@@ -17,9 +17,10 @@ export function boardOnMessage(msg) {
     }
     state.serverNow = msg.computedAt;
     render();
-  } else if (msg.type === 'message_sent') {
-    toast(`${msg.message.channel.toUpperCase()} sent to ${msg.message.patient_name}`);
   }
+  // Sent messages are not toasted: a busy evening sends dozens, and a stack
+  // of them sits on top of the cards the desk is trying to press. The
+  // Messages tab is the record.
 }
 
 const STATUS = {

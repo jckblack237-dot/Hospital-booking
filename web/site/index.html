@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Vaguthu — Know your turn</title>
-<meta name="description" content="The queue layer for Maldivian clinics. A reception dashboard that runs the queue, and a patient app that tells people when to leave for the clinic.">
+<title>Vaguthu — Clinic queue software for the Maldives</title>
+<meta name="description" content="Vaguthu is queue-management software for clinics in the Maldives: a private dashboard that runs each clinic's queue, and a free patient app that tells people when to leave for the clinic.">
 <meta property="og:title" content="Vaguthu — Know your turn">
 <meta property="og:description" content="Nobody should sit in a lobby just to find out how long they'll wait. A clinic queue platform built for the Maldives.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230e8f8a'/><text x='16' y='23' font-family='sans-serif' font-size='18' font-weight='800' fill='white' text-anchor='middle'>V</text></svg>">
@@ -18,6 +18,7 @@
 <header class="nav">
   <a class="brand" href="/"><span class="mark">V</span><span>Vaguthu</span><span class="thaana" lang="dv" dir="rtl">ވަގުތު</span></a>
   <nav class="links">
+    <a href="#what">What it is</a>
     <a href="#clinics">For clinics</a>
     <a href="#patients">For patients</a>
     <a href="#engine">How it works</a>
@@ -32,14 +33,14 @@
 
 <section class="hero">
   <div class="hero-copy">
-    <p class="eyebrow">Built for the Maldives · Malé to the atolls</p>
+    <p class="eyebrow">Clinic queue software · Built for the Maldives</p>
     <h1>Nobody should sit in a lobby just to find out how long they'll wait.</h1>
-    <p class="lede">Vaguthu runs the queue at the reception desk and tells every patient, on their phone, when to leave for the clinic. Fewer people in the waiting room. Fewer "how much longer?" at the desk. Doctors who can see their own day.</p>
+    <p class="lede"><strong>Vaguthu is a queue system for clinics.</strong> Reception runs the day from a private dashboard, and every patient gets a free app that shows the queue live and tells them, on their phone, when to leave for the clinic. Fewer people in the waiting room. Fewer "how much longer?" at the desk. Doctors who can see their own day.</p>
     <div class="cta-row">
       <a class="btn primary lg" href="#demo">Book a demo</a>
       <a class="btn lg" href="/clinic/">Try the dashboard</a>
     </div>
-    <p class="fine">Working demo. Sign in with the accounts shown on the sign-in page and press <em>Run the evening</em>.</p>
+    <p class="fine">Working demo. The queue on the right is a real clinic evening running right now, on its own. Sign in with the accounts shown on the sign-in page to work it yourself.</p>
   </div>
 
   <div class="hero-live" id="live" aria-live="polite">
@@ -53,17 +54,59 @@
   </div>
 </section>
 
+<section class="band what" id="what">
+  <div class="wrap">
+    <p class="eyebrow">What Vaguthu is</p>
+    <h2>Queue software for clinics in the Maldives, and a free app for their patients.</h2>
+    <p class="lede narrow">Vaguthu (<span class="thaana" lang="dv" dir="rtl">ވަގުތު</span>, Dhivehi for <em>time</em>) is a Maldivian software product with two halves. One runs a clinic's queue at the reception desk. The other tells that clinic's patients when to leave home. Together they replace the paper register, the phone calls, and the two hours in a plastic chair. It is built for clinics from a single GP room on an island to a fifteen-doctor centre in Malé.</p>
+
+    <div class="what-grid">
+      <div class="card">
+        <span class="num">01 · For clinics</span>
+        <h3>The clinic dashboard</h3>
+        <p>The clinic's own private workspace. Reception runs the queue board, each doctor gets a screen with two buttons, and patient records, billing, Aasandha claims, messaging and a weekly insight report all live in the same place.</p>
+        <p class="fine">Every clinic gets a separate, isolated system with its own staff sign-ins. No clinic can see another's patients.</p>
+        <a href="#clinics">See the dashboard →</a>
+      </div>
+      <div class="card">
+        <span class="num">02 · For patients</span>
+        <h3>The patient app</h3>
+        <p>Find a doctor by island, by language, or by whether they take Aasandha. Book a token, then watch the queue live from home and get a push that says <em>leave now</em>, timed to how far away you are.</p>
+        <p class="fine">Free for patients. Installs from the browser on Android and iPhone, no app store needed.</p>
+        <a href="#patients">See the app →</a>
+      </div>
+      <div class="card">
+        <span class="num">03 · For partners</span>
+        <h3>The open API</h3>
+        <p>Other patient apps, insurers and hospital systems can read a clinic's live queue and book into it, only as far as that clinic allows, and the clinic can switch a partner off in one click.</p>
+        <p class="fine">OAuth 2, signed webhooks, and a written contract.</p>
+        <a href="#api">Read about the API →</a>
+      </div>
+    </div>
+
+    <h3 class="mt steps-title">How one visit works</h3>
+    <ol class="steps">
+      <li><strong>Book.</strong> In the app, by phone, or by walking in. Every route lands in the same queue and gets a token like <span class="mono">B-07</span>.</li>
+      <li><strong>Get a window, not a time.</strong> The engine watches the doctor's real pace and tells the patient <span class="mono">19:05–19:25</span>, updating as the evening unfolds.</li>
+      <li><strong>Leave when told.</strong> A push arrives when it is time to go, based on where the patient is waiting. The lobby stays empty.</li>
+      <li><strong>Be seen, pay, done.</strong> Reception calls the token, the doctor presses Start and End, and the bill and the Aasandha claim are built from the visit.</li>
+    </ol>
+  </div>
+</section>
+
 <section class="band problem" id="problem">
   <div class="wrap">
-    <h2>An ordinary evening at a Malé clinic</h2>
+    <p class="eyebrow">The problem</p>
+    <h2>An ordinary evening at a Malé clinic today</h2>
+    <p class="lede narrow">A 16:00 appointment, booked three days ago. This is what happens to the patient who holds it.</p>
     <ol class="timeline">
-      <li><span class="t mono">16:00</span><span>The appointment. Booked three days ago.</span></li>
-      <li><span class="t mono">15:45</span><span>The patient arrives early, to be safe. The lobby is already full.</span></li>
-      <li><span class="t mono">16:40</span><span>The doctor arrives. Nobody was told.</span></li>
-      <li><span class="t mono">17:20</span><span>Three walk-ins are slotted ahead. One consultation runs 25 minutes over.</span></li>
-      <li><span class="t mono">18:20</span><span>The patient is seen. Two hours and thirty-five minutes in a chair.</span></li>
+      <li><span class="t mono">15:45</span><span>Arrives fifteen minutes early, to be safe. The lobby is already full.</span></li>
+      <li><span class="t mono">16:00</span><span>Appointment time. The doctor is not in yet. Nobody was told.</span></li>
+      <li><span class="t mono">16:40</span><span>The doctor arrives, forty minutes late. The queue starts.</span></li>
+      <li><span class="t mono">17:20</span><span>Three walk-ins go in ahead. One consultation runs 25 minutes over.</span></li>
+      <li><span class="t mono">18:20</span><span>Finally seen. Two hours and thirty-five minutes in a chair, for a ten-minute consultation.</span></li>
     </ol>
-    <p class="lede narrow">Nobody lied to them. The queue simply lives on a paper register and in the receptionist's head, so the only way to know your position is to be physically present. For someone who took a ferry from Naifaru, that lobby is why they booked a hotel. <strong>The fix is not a better booking. It's a queue with a live, honest source of truth.</strong></p>
+    <p class="lede narrow">Nobody lied to them. The queue simply lives on a paper register and in the receptionist's head, so the only way to know your position is to be physically present. For someone who took a ferry from Naifaru, that lobby is why they booked a hotel. <strong>The fix is not a better booking. It's a queue with a live, honest source of truth.</strong> With Vaguthu, the same patient stays home until 17:55, when their phone tells them to leave.</p>
   </div>
 </section>
 

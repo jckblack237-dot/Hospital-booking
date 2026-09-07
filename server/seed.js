@@ -149,6 +149,82 @@ function seedHistoricalSession(clinicId, doctor, startMs, endMs, patients) {
   return session;
 }
 
+/**
+ * One clinic's evening: sessions for each of its doctors on the given day,
+ * with a realistic booking mix. Used by the initial seed and, in demo mode,
+ * by the autopilot every time the previous evening has finished — so the
+ * demo never sits on a board that has stopped moving.
+ *
+ * `pool` is the patients to book from; by default, everyone the clinic has
+ * seen before (its clinic_patients rows), which is exactly what a real
+ * clinic's evening looks like.
+ */
+export function seedClinicEvening(clinic, p, demoNow, { pool = null } = {}) {
+  const settings = JSON.parse(clinic.settings || '{}');
+  const solo = settings.tier === 'solo';
+  const doctors = db.prepare('SELECT * FROM doctors WHERE clinic_id = ? ORDER BY rowid').all(clinic.id);
+  const patients = pool ?? db.prepare(`SELECT p.* FROM patients p JOIN clinic_patients cp ON cp.patient_id = p.id
+                                       WHERE cp.clinic_id = ? ORDER BY p.rowid`).all(clinic.id);
+  if (!doctors.length || !patients.length) return [];
+
+  const byName = (name) => (pool
+    ? pool.find((x) => x.name === name)
+    : db.prepare(`SELECT p.* FROM patients p JOIN clinic_patients cp ON cp.patient_id = p.id
+                  WHERE cp.clinic_id = ? AND p.name = ?`).get(clinic.id, name)) ?? null;
+  const persona = solo ? null : byName('Aishath Shifa');
+  const child = solo ? null : byName('Ahmed Naail');
+  const firstParty = db.prepare("SELECT id FROM partners WHERE client_id = 'pk_demo_vaguthu'").get()?.id ?? null;
+  const partnerId = db.prepare(`SELECT pc.partner_id FROM partner_clinic pc JOIN partners pt ON pt.id = pc.partner_id
+                                WHERE pc.clinic_id = ? AND pc.enabled = 1 AND pt.client_id <> 'pk_demo_vaguthu' LIMIT 1`).get(clinic.id)?.partner_id ?? null;
+
+  const sessions = [];
+  for (let i = 0; i < doctors.length; i++) {
+    const doctor = doctors[i];
+    const session = createSession({
+      clinicId: clinic.id, doctorId: doctor.id, slotMinutes: doctor.slot_minutes,
+      start: mvTime(p.year, p.month, p.day, 17, 0), end: mvTime(p.year, p.month, p.day, solo ? 19 : 20, solo ? 30 : 0),
+    });
+    sessions.push(session);
+    const letter = String.fromCharCode(65 + (i % 26));
+    // Leave real headroom. A clinic whose every slot is already sold has
+    // nothing for the app or a partner to book, which is neither realistic
+    // nor a useful demo.
+    const { slots } = slotsForSession(session);
+    const count = solo ? 7 : Math.max(4, Math.min(randInt(9, 16), Math.floor(slots.length * 0.6)));
+    for (let k = 0; k < count; k++) {
+      const patient = (i === 0 && k === 0 && persona) ? persona
+        : (i === 1 && k === 2 && child) ? child
+          : solo ? patients[(i * 7 + k) % patients.length] : pick(patients);
+      const source = solo ? (chance(0.5) ? 'walk_in' : 'phone')
+        : chance(0.42) ? 'app' : chance(0.45) ? 'phone' : chance(0.6) ? 'walk_in' : 'partner';
+      const viaPartner = source === 'partner' && partnerId;
+      const flags = [];
+      if (patient.travel_island) flags.push('travel');
+      db.prepare(`INSERT INTO tokens (id, session_id, patient_id, display, seq, source, partner_id,
+                  partner_reference, visit_type, state, flags, booked_at)
+                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(id('tok'), session.id, patient.id, `${letter}-${String(k + 1).padStart(2, '0')}`, (k + 1) * 1000,
+          viaPartner ? 'partner' : source === 'partner' ? 'phone' : source,
+          viaPartner ? partnerId : source === 'app' ? firstParty : null,
+          viaPartner ? `dhoni-bk-${randInt(10000, 99999)}` : null,
+          chance(0.45) ? 'new' : 'follow_up', chance(0.3) ? 'arrived' : 'booked',
+          JSON.stringify(flags), demoNow - randInt(1, 96) * 3_600_000);
+    }
+  }
+
+  // Every clinic knows exactly the patients who have a token with it — no more.
+  db.exec(`INSERT OR IGNORE INTO clinic_patients (clinic_id, patient_id, first_seen_at)
+           SELECT DISTINCT s.clinic_id, t.patient_id, MIN(COALESCE(t.booked_at, s.scheduled_start))
+           FROM tokens t JOIN sessions s ON s.id = t.session_id WHERE s.clinic_id = '${clinic.id}' GROUP BY s.clinic_id, t.patient_id`);
+
+  // Eligibility is checked at booking, so the queue should already carry a
+  // result on most cards — including the ones that could not be verified.
+  for (const s of sessions) {
+    for (const row of db.prepare('SELECT DISTINCT patient_id FROM tokens WHERE session_id = ?').all(s.id)) checkEligibility(row.patient_id);
+  }
+  return sessions;
+}
+
 export function seed({ force = false } = {}) {
   const existing = db.prepare('SELECT COUNT(*) AS c FROM clinics').get().c;
   if (existing && !force) return { skipped: true };
@@ -262,60 +338,13 @@ export function seed({ force = false } = {}) {
   db.prepare('INSERT INTO partner_clinic (partner_id, clinic_id, enabled, allocation_pct) VALUES (?,?,?,?)')
     .run(firstParty, clinicId, 1, 100);
 
-  // Today: morning done, evening ahead.
-  const todaySessions = [];
-  for (let i = 0; i < doctorRows.length; i++) {
-    const doctor = doctorRows[i];
-    const evening = createSession({
-      clinicId, doctorId: doctor.id, slotMinutes: doctor.slot_minutes,
-      start: mvTime(p.year, p.month, p.day, 17, 0), end: mvTime(p.year, p.month, p.day, 20, 0),
-    });
-    todaySessions.push(evening);
-
-    const letter = String.fromCharCode(65 + (i % 26));
-    // Leave real headroom. A clinic whose every slot is already sold has
-    // nothing for the app or a partner to book, which is neither realistic
-    // nor a useful demo.
-    const { slots } = slotsForSession(evening);
-    const count = Math.max(4, Math.min(randInt(9, 16), Math.floor(slots.length * 0.6)));
-    for (let k = 0; k < count; k++) {
-      const isPersona = i === 0 && k === 0;
-      const patient = isPersona ? aishath : (i === 1 && k === 2) ? child : pick(patients);
-      const source = chance(0.42) ? 'app' : chance(0.45) ? 'phone' : chance(0.6) ? 'walk_in' : 'partner';
-      const flags = [];
-      if (patient.travel_island) flags.push('travel');
-      db.prepare(`INSERT INTO tokens (id, session_id, patient_id, display, seq, source, partner_id,
-                  partner_reference, visit_type, state, flags, booked_at)
-                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(id('tok'), evening.id, patient.id, `${letter}-${String(k + 1).padStart(2, '0')}`, (k + 1) * 1000,
-          source,
-          source === 'partner' ? partnerId : source === 'app' ? firstParty : null,
-          source === 'partner' ? `dhoni-bk-${randInt(10000, 99999)}` : null,
-          chance(0.45) ? 'new' : 'follow_up', chance(0.3) ? 'arrived' : 'booked',
-          JSON.stringify(flags), demoNow - randInt(1, 96) * 3_600_000);
-    }
-  }
-
-  // The island clinic gets its own evening, with its own patients — a second
-  // tenant to prove isolation against, and a real atoll demo.
+  // Today: morning done, evening ahead. Both clinics get their own evening,
+  // with their own patients — a second tenant to prove isolation against, and
+  // a real atoll demo.
   const islanders = [];
   for (let i = 0; i < 24; i++) islanders.push(makePatient());
-  for (let i = 0; i < atollDoctorRows.length; i++) {
-    const doctor = atollDoctorRows[i];
-    const session = createSession({
-      clinicId: atollClinicId, doctorId: doctor.id, slotMinutes: doctor.slot_minutes,
-      start: mvTime(p.year, p.month, p.day, 17, 0), end: mvTime(p.year, p.month, p.day, 19, 30),
-    });
-    const letter = String.fromCharCode(65 + i);
-    for (let k = 0; k < 7; k++) {
-      const patient = islanders[(i * 7 + k) % islanders.length];
-      db.prepare(`INSERT INTO tokens (id, session_id, patient_id, display, seq, source, visit_type, state, flags, booked_at)
-                  VALUES (?,?,?,?,?,?,?,?,?,?)`)
-        .run(id('tok'), session.id, patient.id, `${letter}-${String(k + 1).padStart(2, '0')}`, (k + 1) * 1000,
-          chance(0.5) ? 'walk_in' : 'phone', chance(0.5) ? 'new' : 'follow_up', chance(0.3) ? 'arrived' : 'booked',
-          '[]', demoNow - randInt(1, 48) * 3_600_000);
-    }
-  }
+  const todaySessions = seedClinicEvening(db.prepare('SELECT * FROM clinics WHERE id = ?').get(clinicId), p, demoNow, { pool: patients });
+  seedClinicEvening(db.prepare('SELECT * FROM clinics WHERE id = ?').get(atollClinicId), p, demoNow, { pool: islanders });
 
   // Every clinic knows exactly the patients who have a token with it — no more.
   db.exec(`INSERT OR IGNORE INTO clinic_patients (clinic_id, patient_id, first_seen_at)
@@ -326,13 +355,6 @@ export function seed({ force = false } = {}) {
     db.prepare('INSERT OR IGNORE INTO clinic_patients (clinic_id, patient_id, first_seen_at) VALUES (?,?,?)')
       .run(atollClinicId, pid, demoNow - 4 * 86_400_000);
   }
-
-  // Eligibility is checked at booking, so today's queue should already carry
-  // a result on most cards — including the ones that could not be verified.
-  const todayPatients = db.prepare(`SELECT DISTINCT t.patient_id FROM tokens t
-                                    JOIN sessions s ON s.id = t.session_id
-                                    WHERE s.scheduled_start >= ?`).all(demoNow - 3600_000);
-  for (const row of todayPatients) checkEligibility(row.patient_id);
 
   return {
     clinicId, atollClinicId, doctors: doctorRows.length, patients: patients.length,
