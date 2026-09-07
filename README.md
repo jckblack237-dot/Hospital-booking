@@ -67,6 +67,15 @@ npm run provision -- --name "Hulhumalé Medical" --island Hulhumale --atoll K \
 The demo credentials above are stored on the seeded clinics and offered by the sign-in page only
 while `VAGUTHU_DEMO` is not `false`; they never appear in any other response.
 
+## The demo runs by itself
+
+While `VAGUTHU_DEMO` is not `false`, the server drives the demo on its own (`server/services/autopilot.js`):
+the evening starts when the server boots, doctors are simulated at ×10 (`VAGUTHU_DEMO_SPEED`),
+and when every session has finished the demo rolls on to the next working day with a fresh
+evening for each seeded clinic. A restart resumes rather than freezing the board. The demo
+controls in the dashboard sidebar change the speed or pause it; the next evening starts again
+regardless. Set `VAGUTHU_AUTOPILOT=false` to disable it without leaving demo mode.
+
 ## Each clinic is its own CRM
 
 Two clinics are seeded — Malé Family Clinic and Naifaru Health Centre — and they cannot see each

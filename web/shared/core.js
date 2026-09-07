@@ -132,6 +132,8 @@ export function toast(message, kind = '') {
     document.body.append(toastHost);
   }
   const el = h(`div.toast${kind ? `.${kind}` : ''}`, {}, message);
+  // Never let toasts pile up over the page: at most three, oldest out first.
+  while (toastHost.children.length >= 3) toastHost.firstChild.remove();
   toastHost.append(el);
   setTimeout(() => el.remove(), kind === 'err' ? 5000 : 2800);
 }

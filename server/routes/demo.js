@@ -5,6 +5,7 @@ import * as clock from '../lib/clock.js';
 import { asyncRoute } from '../lib/util.js';
 import { mvParts, mvTime, hhmm } from '../lib/mvtime.js';
 import * as simulator from '../services/simulator.js';
+import * as autopilot from '../services/autopilot.js';
 import { stalenessReport } from '../engine/engine.js';
 import { stats as realtimeStats } from '../realtime.js';
 import { strings } from '../services/i18n.js';
@@ -17,6 +18,7 @@ router.get('/state', asyncRoute((req, res) => {
   res.json({
     clock: { ...clock.state(), label: hhmm(clock.now()) },
     simulating: simulator.status(),
+    autopilot: autopilot.status(),
     realtime: realtimeStats(),
     staleness: stalenessReport(),
     clinicId: clinic?.id,
@@ -38,6 +40,7 @@ router.post('/clock', asyncRoute((req, res) => {
 router.post('/reseed', asyncRoute((req, res) => {
   for (const s of simulator.status()) simulator.disable(s.sessionId);
   const result = seed({ force: true });
+  autopilot.boot();
   res.json(result);
 }));
 

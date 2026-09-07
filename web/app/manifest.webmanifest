@@ -1,0 +1,14 @@
+{
+  "name": "Vaguthu",
+  "short_name": "Vaguthu",
+  "description": "Know your turn. See your clinic queue live and get told when to leave.",
+  "start_url": "/app/",
+  "scope": "/app/",
+  "display": "standalone",
+  "background_color": "#f6f7f7",
+  "theme_color": "#0a9396",
+  "lang": "en",
+  "icons": [
+    { "src": "/app/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

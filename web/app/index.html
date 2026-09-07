@@ -6,6 +6,9 @@
 <title>Vaguthu — Know your turn</title>
 <meta name="description" content="See exactly where you are in the clinic queue. We tell you when to leave.">
 <meta name="theme-color" content="#0a9396">
+<link rel="manifest" href="/app/manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Vaguthu">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🎫</text></svg>">
 <link rel="stylesheet" href="/shared/tokens.css">
 <link rel="stylesheet" href="/shared/ui.css">
@@ -14,5 +17,6 @@
 <body>
 <div id="root"><div class="empty"><div class="spinner" style="margin:0 auto 10px"></div>Loading…</div></div>
 <script type="module" src="/app/app.js"></script>
+<script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("/app/sw.js").catch(() => {});</script>
 </body>
 </html>

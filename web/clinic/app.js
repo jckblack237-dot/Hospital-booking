@@ -177,13 +177,15 @@ function sidebar() {
         onClick: () => { state.tab = key; location.hash = key; render(); },
       }, h('span.ico', { html: ICONS[ico] }), label, h('kbd', {}, String(i + 1))))),
     h('div.spacer'),
-    h('details.demo', { open: running > 0 },
+    state.demo_enabled === false ? null : h('details.demo', { open: !!state.demoOpen, onToggle: (e) => { state.demoOpen = e.target.open; } },
       h('summary', {}, '▸ Demo controls', running ? h('span.pill.ok', {}, `${running} live`) : null),
       h('div.body', {},
-        h('div.status', {}, `Clock ×${d?.clock?.speed ?? 1}${d?.staleness?.length ? ' · ⚠ stale projection' : ''}`),
-        h('button.btn.sm.primary', { onClick: () => runDay(20) }, '▶ Run the evening (×20)'),
+        h('div.status', {}, running
+          ? `The evening runs by itself at ×${d?.clock?.speed ?? 1}${d?.staleness?.length ? ' · ⚠ stale projection' : ''}`
+          : `Paused · clock ×${d?.clock?.speed ?? 1}`),
         h('div.row', {},
-          h('button.btn.sm.grow', { onClick: () => runDay(60) }, '×60'),
+          h('button.btn.sm.primary.grow', { onClick: () => runDay(10) }, running ? '×10' : '▶ Run ×10'),
+          h('button.btn.sm.grow', { onClick: () => runDay(30) }, '×30'),
           h('button.btn.sm.grow', { onClick: () => stopDay() }, '⏸ Stop')),
         h('button.btn.sm.ghost', {
           onClick: async () => {
@@ -268,6 +270,7 @@ async function boot(session) {
   setAuth(session.token);
   const data = await call(() => api('/api/clinic/bootstrap'));
   Object.assign(state, data);
+  state.demo_enabled = data.demo !== false;
   state.staff = { ...data.staff, mustChangePassword: !!session.staff?.mustChangePassword };
   state.tab = (location.hash || '#board').slice(1) || 'board';
   if (!TABS.some(([k]) => k === state.tab)) state.tab = 'board';

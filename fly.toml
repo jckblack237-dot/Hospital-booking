@@ -1,0 +1,25 @@
+# fly launch --copy-config && fly volumes create vaguthu_data --size 1 && fly deploy
+app = "vaguthu"
+primary_region = "sin"   # Singapore: nearest region to the Maldives
+
+[build]
+
+[env]
+  PORT = "3000"
+  VAGUTHU_DATA_DIR = "/data"
+  VAGUTHU_DEMO = "true"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = false
+  min_machines_running = 1
+
+[[http_service.checks]]
+  path = "/healthz"
+  interval = "30s"
+  timeout = "5s"
+
+[mounts]
+  source = "vaguthu_data"
+  destination = "/data"

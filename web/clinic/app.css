@@ -85,66 +85,61 @@ h1, h2, h3 { margin: 0; letter-spacing: -.01em; text-wrap: balance; }
 .view.board-view { overflow: hidden; padding: 0; }
 
 /* ------------------------------------------------------------------ board */
-.board { display: flex; gap: 14px; height: 100%; overflow-x: auto; padding: 16px 22px 18px; align-items: flex-start; scroll-snap-type: x proximity; }
-.col { flex: 0 0 330px; max-height: 100%; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); overflow: hidden; scroll-snap-align: start; }
-.col.add { flex-basis: 260px; background: transparent; border-style: dashed; box-shadow: none; }
-.col > header { padding: 14px 14px 12px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
-.col .who { display: flex; align-items: center; gap: 10px; }
-.col .who .av { width: 36px; height: 36px; border-radius: 12px; background: var(--brand-soft); color: var(--brand-deep); display: grid; place-items: center; font-weight: 700; font-size: 13px; flex: none; }
-.col .who .doc { font-weight: 700; font-size: 16px; line-height: 1.2; }
-.col .who .spec { font-size: 12.5px; color: var(--text-3); }
-.col .status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.col .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; font-weight: 700; font-size: 13px; background: var(--surface-2); color: var(--text-2); }
-.col .chip.ok { background: var(--here-bg); color: var(--here); }
-.col .chip.warn { background: var(--called-bg); color: var(--called); }
-.col .chip.danger { background: var(--back-bg); color: var(--back); }
-.col .chip.brand { background: var(--brand-soft); color: var(--brand-deep); }
-.col .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
-.col .serving { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; border-radius: 10px; background: var(--brand-soft); color: var(--brand-deep); font-size: 13.5px; }
-.col .serving.none { background: var(--surface-2); color: var(--text-3); }
-.col .serving strong { font-family: var(--num); font-size: 15px; }
-.col .acts { display: flex; gap: 6px; }
-.col .acts .btn { flex: 1; }
-.col .acts .btn.kebab { flex: 0 0 40px; padding: 0; font-size: 18px; }
-.col .list { overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; min-height: 72px; }
+/* A quiet canvas, columns as headings, white cards with air around them.
+   Two lines per card; everything else one tap away. */
+.board { display: flex; gap: 20px; height: 100%; overflow-x: auto; padding: 18px 24px 22px; align-items: flex-start; scroll-snap-type: x proximity; }
+.col { flex: 0 0 300px; max-height: 100%; display: flex; flex-direction: column; scroll-snap-align: start; position: relative; }
+.col.add { flex-basis: 220px; }
+.col > header { padding: 2px 4px 12px; display: flex; flex-direction: column; gap: 8px; }
+.col .doc { font-weight: 700; font-size: 16px; line-height: 1.25; display: flex; align-items: baseline; gap: 8px; }
+.col .doc .spec { font-weight: 400; font-size: 12.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.col .status { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-2); }
+.col .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex: none; }
+.col .status.ok .dot { background: var(--here); } .col .status.warn .dot { background: var(--called); }
+.col .status.danger .dot { background: var(--back); } .col .status.brand .dot { background: var(--brand); }
+.col .status b { color: var(--text); font-weight: 700; }
+.col .serving { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--text-2); min-height: 32px; }
+.col .serving strong { font-family: var(--num); color: var(--brand-deep); font-size: 14px; }
+.col .serving .btn.sm { padding: 5px 11px; }
+.col .list { overflow-y: auto; padding: 4px; margin: 0 -4px; display: flex; flex-direction: column; gap: 10px; min-height: 72px; border-radius: 14px; }
 .col .list.drag-over { background: var(--brand-soft); }
-.col .done-sum { color: var(--text-3); font-size: 13px; cursor: pointer; padding: 6px 4px; }
+.col .done-sum { color: var(--text-3); font-size: 13px; cursor: pointer; padding: 6px 8px; }
 
-.tok { position: relative; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 10px 12px 10px 16px; cursor: grab; transition: border-color .12s, box-shadow .12s; }
-.tok::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 4px; border-radius: 0 3px 3px 0; background: var(--wait); }
+.tok { position: relative; border: 1px solid transparent; border-radius: 14px; background: var(--surface); padding: 12px 14px 12px 18px; cursor: grab; box-shadow: 0 1px 2px rgba(16,32,31,.05), 0 2px 8px rgba(16,32,31,.04); transition: box-shadow .12s, border-color .12s; }
+.tok::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 4px; border-radius: 0 3px 3px 0; background: var(--wait); }
 .tok.s-arrived::before { background: var(--here); }
 .tok.s-called::before { background: var(--called); }
 .tok.s-in_consult::before { background: var(--brand); }
 .tok.s-penalised::before { background: var(--back); }
-.tok.s-in_consult { background: color-mix(in srgb, var(--brand-soft) 55%, var(--surface)); border-color: color-mix(in srgb, var(--brand) 40%, var(--border)); }
-.tok:hover, .tok.open { border-color: var(--border-strong); box-shadow: var(--shadow); }
+.tok.s-in_consult { background: color-mix(in srgb, var(--brand-soft) 45%, var(--surface)); }
+.tok:hover { box-shadow: var(--shadow); }
+.tok.open { border-color: var(--border-strong); box-shadow: var(--shadow); cursor: default; }
 .tok.dragging { opacity: .4; }
 .tok.drop-before { box-shadow: 0 -3px 0 0 var(--brand); }
-.tok.s-no_show, .tok.s-cancelled, .tok.s-completed { opacity: .55; cursor: default; }
+.tok.s-no_show, .tok.s-cancelled, .tok.s-completed { opacity: .55; cursor: default; box-shadow: none; background: transparent; border-color: var(--border); }
 .tok .l1 { display: flex; align-items: center; gap: 9px; }
-.tok .badge { font-family: var(--num); font-weight: 600; font-size: 13px; padding: 2px 7px; border-radius: 7px; background: var(--surface-2); color: var(--text-2); }
+.tok .badge { font-family: var(--num); font-weight: 600; font-size: 12.5px; padding: 2px 7px; border-radius: 7px; background: var(--surface-2); color: var(--text-2); }
 .tok .name { font-weight: 700; font-size: 15px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tok .when { font-family: var(--num); font-size: 13.5px; color: var(--text-2); }
-.tok .l2 { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 13px; }
-.tok .st { font-weight: 700; }
+.tok .when { font-family: var(--num); font-size: 13px; color: var(--text-3); }
+.tok .l2 { display: flex; align-items: center; gap: 8px; margin-top: 7px; font-size: 13px; min-height: 28px; }
+.tok .st { font-weight: 700; white-space: nowrap; }
 .tok .st.arrived { color: var(--here); } .tok .st.called { color: var(--called); }
 .tok .st.in_consult { color: var(--brand-deep); } .tok .st.penalised { color: var(--back); }
 .tok .st.booked { color: var(--text-3); font-weight: 400; }
-.tok .flag { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--violet-bg); color: var(--violet); font-weight: 700; }
+.tok .flag { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--violet-bg); color: var(--violet); font-weight: 700; white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
 .tok .flag.warn { background: var(--called-bg); color: var(--called); }
-.tok .l3 { margin-top: 5px; font-size: 12.5px; color: var(--text-3); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.tok .l3 .ok { color: var(--here); }
-.tok .l3 .unv { color: var(--called); font-weight: 700; }
-.tok .go { display: flex; gap: 6px; margin-top: 9px; }
-.tok .go .btn { flex: 1; }
-.tok .more { display: none; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
-.tok.open .more { display: flex; }
+.tok .l2 .grow { flex: 1; }
+.tok .l2 .btn.sm { padding: 5px 12px; }
+.tok .detail { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text-2); display: flex; gap: 6px 8px; flex-wrap: wrap; align-items: center; }
+.tok .detail .ok { color: var(--here); }
+.tok .detail .unv { color: var(--called); font-weight: 700; }
+.tok .more { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 .conf { display: inline-flex; gap: 2px; align-items: flex-end; height: 10px; }
 .conf i { width: 3px; border-radius: 1px; background: var(--border-strong); display: block; }
 .conf i:nth-child(1) { height: 4px; } .conf i:nth-child(2) { height: 7px; } .conf i:nth-child(3) { height: 10px; }
 .conf i.on { background: var(--brand); }
 
-.menu { position: absolute; z-index: 30; right: 10px; top: 52px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-lg); min-width: 190px; padding: 6px; display: flex; flex-direction: column; }
+.menu { position: absolute; z-index: 30; right: 0; top: 30px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-lg); min-width: 190px; padding: 6px; display: flex; flex-direction: column; }
 .menu button { border: none; background: none; text-align: left; padding: 9px 12px; border-radius: 8px; cursor: pointer; font: inherit; color: var(--text); font-size: 14px; }
 .menu button:hover { background: var(--surface-2); }
 .menu button.danger { color: var(--back); }
