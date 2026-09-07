@@ -24,10 +24,11 @@
     <a href="#engine">How it works</a>
     <a href="#pricing">Pricing</a>
     <a href="#api">API</a>
+    <a href="#demo">Contact</a>
   </nav>
   <div class="nav-cta">
-    <a class="btn ghost" href="/app/">Patient app</a>
-    <a class="btn primary" href="/clinic/">Clinic sign in</a>
+    <a class="btn ghost" href="/app/" target="_blank" rel="noopener">Patient app <span class="ext" aria-hidden="true">↗</span></a>
+    <a class="btn primary" href="/clinic/" target="_blank" rel="noopener">Clinic CRM <span class="ext" aria-hidden="true">↗</span></a>
   </div>
 </header>
 
@@ -37,21 +38,16 @@
     <h1>Nobody should sit in a lobby just to find out how long they'll wait.</h1>
     <p class="lede"><strong>Vaguthu is a queue system for clinics.</strong> Reception runs the day from a private dashboard, and every patient gets a free app that shows the queue live and tells them, on their phone, when to leave for the clinic. Fewer people in the waiting room. Fewer "how much longer?" at the desk. Doctors who can see their own day.</p>
     <div class="cta-row">
-      <a class="btn primary lg" href="#demo">Book a demo</a>
-      <a class="btn lg" href="/clinic/">Try the dashboard</a>
+      <a class="btn primary lg" href="/clinic/" target="_blank" rel="noopener">Open the clinic CRM <span class="ext" aria-hidden="true">↗</span></a>
+      <a class="btn lg" href="/app/" target="_blank" rel="noopener">Open the patient app <span class="ext" aria-hidden="true">↗</span></a>
     </div>
-    <p class="fine">Working demo. The queue on the right is a real clinic evening running right now, on its own. Sign in with the accounts shown on the sign-in page to work it yourself.</p>
+    <p class="fine">Each opens in its own tab. Demo sign-ins are listed on the CRM sign-in page.</p>
   </div>
 
-  <div class="hero-live" id="live" aria-live="polite">
-    <div class="live-head">
-      <span class="live-dot"></span>
-      <span id="live-title">Connecting to a live clinic…</span>
-      <span class="mono" id="live-clock"></span>
-    </div>
-    <div class="live-cols" id="live-cols"></div>
-    <p class="live-note">A real queue from the demo clinic, updating as the engine recalculates. Token codes only — never a name.</p>
-  </div>
+  <figure class="hero-shot">
+    <img src="/img/board.png" alt="The Vaguthu queue board: one column per doctor, each patient a card with a single next action">
+    <figcaption>The queue board, as reception sees it.</figcaption>
+  </figure>
 </section>
 
 <section class="band what" id="what">
@@ -256,7 +252,7 @@ POST /v1/webhook_endpoints
 <footer class="foot">
   <div class="wrap">
     <span><strong>Vaguthu</strong> <span class="thaana" lang="dv" dir="rtl">ވަގުތު</span> · <em>time</em>, in Dhivehi. A working name.</span>
-    <nav><a href="/clinic/">Clinic sign in</a><a href="/app/">Patient app</a><a href="/docs/01-market-context.md">Documentation</a><a href="/docs/02-prd-b2b-clinic-command-center.md">Product requirements</a></nav>
+    <nav><a href="/clinic/" target="_blank" rel="noopener">Clinic CRM ↗</a><a href="/app/" target="_blank" rel="noopener">Patient app ↗</a><a href="/docs/01-market-context.md">Documentation</a><a href="/docs/02-prd-b2b-clinic-command-center.md">Product requirements</a></nav>
   </div>
 </footer>
 
