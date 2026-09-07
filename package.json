@@ -12,7 +12,8 @@
     "dev": "node --watch server/index.js",
     "seed": "node server/seed.js --force",
     "test": "node --test test/*.test.js",
-    "provision": "node server/provision.js"
+    "provision": "node server/provision.js",
+    "leads": "node server/leads.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1",

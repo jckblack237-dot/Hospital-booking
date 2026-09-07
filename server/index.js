@@ -11,6 +11,7 @@ import { router as authRouter } from './routes/auth.js';
 import { router as patientRouter } from './routes/patient.js';
 import { router as partnerRouter, oauth as oauthRouter } from './routes/partner.js';
 import { router as demoRouter } from './routes/demo.js';
+import { router as publicRouter } from './routes/public.js';
 import * as notify from './services/notify.js';
 import * as queueService from './services/queue.js';
 import * as scheduling from './services/scheduling.js';
@@ -27,6 +28,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/clinic', clinicRouter);
 app.use('/api/patient', patientRouter);
 app.use('/api/demo', demoRouter);
+app.use('/api/public', publicRouter);
 app.use('/oauth', oauthRouter);
 app.use('/v1', partnerRouter);
 

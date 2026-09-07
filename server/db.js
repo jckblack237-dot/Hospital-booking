@@ -34,6 +34,12 @@ CREATE TABLE IF NOT EXISTS staff (
 
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 
+-- Demo requests from the website. Read with: npm run leads
+CREATE TABLE IF NOT EXISTS leads (
+  id TEXT PRIMARY KEY, clinic TEXT, name TEXT, contact TEXT, island TEXT,
+  doctors INTEGER, message TEXT, created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS login_attempts (
   key TEXT PRIMARY KEY, failures INTEGER NOT NULL DEFAULT 0, locked_until INTEGER
 );
