@@ -44,6 +44,9 @@ router.get('/bootstrap', asyncRoute((req, res) => {
     doctors: db.prepare('SELECT * FROM doctors WHERE clinic_id = ? ORDER BY rowid').all(clinicId)
       .map((d) => ({ ...d, languages: parse(d.languages, []) })),
     penaltyPolicy: queue.clinicSettings(clinicId).penalty,
+    // The demo panel (simulated doctors, reseed) exists only for evaluation.
+    // A real clinic never sees it.
+    demo: process.env.VAGUTHU_DEMO !== 'false',
     serverNow: now(),
   });
 }));

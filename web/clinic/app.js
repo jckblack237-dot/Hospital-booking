@@ -177,7 +177,7 @@ function sidebar() {
         onClick: () => { state.tab = key; location.hash = key; render(); },
       }, h('span.ico', { html: ICONS[ico] }), label, h('kbd', {}, String(i + 1))))),
     h('div.spacer'),
-    h('details.demo', { open: running > 0 },
+    state.demo_enabled === false ? null : h('details.demo', { open: running > 0 },
       h('summary', {}, '▸ Demo controls', running ? h('span.pill.ok', {}, `${running} live`) : null),
       h('div.body', {},
         h('div.status', {}, `Clock ×${d?.clock?.speed ?? 1}${d?.staleness?.length ? ' · ⚠ stale projection' : ''}`),
@@ -268,6 +268,7 @@ async function boot(session) {
   setAuth(session.token);
   const data = await call(() => api('/api/clinic/bootstrap'));
   Object.assign(state, data);
+  state.demo_enabled = data.demo !== false;
   state.staff = { ...data.staff, mustChangePassword: !!session.staff?.mustChangePassword };
   state.tab = (location.hash || '#board').slice(1) || 'board';
   if (!TABS.some(([k]) => k === state.tab)) state.tab = 'board';
