@@ -303,7 +303,10 @@ export function seed({ force = false } = {}) {
   db.prepare('INSERT INTO referrals (id, patient_id, from_doctor, to_specialty, note, issued_at, expires_at) VALUES (?,?,?,?,?,?,?)')
     .run(id('ref'), child.id, 'Dr. Mohamed Latheef (Naifaru Health Centre)', 'paediatrics',
       'Recurrent wheeze, for specialist paediatric review.', demoNow - 4 * 86_400_000, demoNow + 60 * 86_400_000);
-  patients.push(aishath, fathimath, child);
+  // Re-read the personas: the rows were renamed after creation, and the
+  // evening seeder finds them by name.
+  const fresh = (row) => db.prepare('SELECT * FROM patients WHERE id = ?').get(row.id);
+  patients.push(fresh(aishath), fresh(fathimath), fresh(child));
 
   // Three weeks of history so the model is calibrated and reports are not empty.
   for (let dayOffset = 21; dayOffset >= 1; dayOffset--) {
