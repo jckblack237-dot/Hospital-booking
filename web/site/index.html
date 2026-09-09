@@ -12,12 +12,20 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@500;600&display=swap">
 <link rel="stylesheet" href="/site.css">
+<script>
+/* Applied before first paint so a chosen theme never flashes the other one. */
+(function () { try { var t = localStorage.getItem('vaguthu-theme');
+  if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {} })();
+</script>
+<noscript><style>
+  @media (max-width: 900px) { .links { opacity: 1 !important; transform: none !important; visibility: visible !important; pointer-events: auto !important; } .nav-toggle { display: none !important; } }
+</style></noscript>
 </head>
 <body>
 
 <header class="nav">
   <a class="brand" href="/"><span class="mark">V</span><span>Vaguthu</span><span class="thaana" lang="dv" dir="rtl">ވަގުތު</span></a>
-  <nav class="links">
+  <nav class="links" id="nav-links">
     <a href="#what">What it is</a>
     <a href="#clinics">For clinics</a>
     <a href="#patients">For patients</a>
@@ -25,11 +33,24 @@
     <a href="#pricing">Pricing</a>
     <a href="#api">API</a>
     <a href="#demo">Contact</a>
+    <a class="in-menu" href="/app/" target="_blank" rel="noopener">Patient app <span class="ext" aria-hidden="true">↗</span></a>
+    <button class="theme-row js-theme" type="button">
+      <span class="theme-row-label">Theme</span>
+      <span class="theme-row-value"><span class="if-light">Light</span><span class="if-dark">Dark</span></span>
+    </button>
   </nav>
   <div class="nav-cta">
-    <a class="btn ghost" href="/app/" target="_blank" rel="noopener">Patient app <span class="ext" aria-hidden="true">↗</span></a>
+    <a class="btn ghost not-in-menu" href="/app/" target="_blank" rel="noopener">Patient app <span class="ext" aria-hidden="true">↗</span></a>
     <a class="btn primary" href="/clinic/" target="_blank" rel="noopener">Clinic CRM <span class="ext" aria-hidden="true">↗</span></a>
   </div>
+  <button class="theme-toggle js-theme" type="button" id="theme-toggle" aria-label="Switch theme" title="Switch theme">
+    <svg class="sun" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="3.6"/><path d="M10 1.6v2M10 16.4v2M18.4 10h-2M3.6 10h-2M15.9 4.1l-1.4 1.4M5.5 14.5l-1.4 1.4M15.9 15.9l-1.4-1.4M5.5 5.5L4.1 4.1"/></svg>
+    <svg class="moon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16.5 11.8A7 7 0 0 1 8.2 3.5a7 7 0 1 0 8.3 8.3z"/></svg>
+  </button>
+  <button class="nav-toggle" type="button" id="nav-toggle" aria-expanded="false" aria-controls="nav-links" aria-label="Menu">
+    <svg class="bars" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 6h14M3 10h14M3 14h14"/></svg>
+    <svg class="x" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"/></svg>
+  </button>
 </header>
 
 <section class="hero">
@@ -40,7 +61,7 @@
   </div>
 
   <figure class="hero-shot">
-    <img src="/img/board.png" alt="The Vaguthu queue board: one column per doctor, each patient a card with a single next action">
+    <picture><source data-theme-src srcset="/img/board-dark.png" media="(prefers-color-scheme: dark)"><img src="/img/board.png" alt="The Vaguthu queue board: one column per doctor, each patient a card with a single next action" width="1280" height="900"></picture>
     <figcaption>The queue board, as reception sees it.</figcaption>
   </figure>
 </section>
@@ -117,7 +138,7 @@
           <li>Keyboard-first: <kbd>W</kbd> for a walk-in, <kbd>⌘K</kbd> to find anyone.</li>
         </ul>
       </div>
-      <figure class="shot"><img src="/img/board.png" alt="The queue board: one column per doctor, two-line patient cards, a single action each" loading="lazy"></figure>
+      <figure class="shot"><picture><source data-theme-src srcset="/img/board-dark.png" media="(prefers-color-scheme: dark)"><img src="/img/board.png" alt="The queue board: one column per doctor, two-line patient cards, a single action each" loading="lazy" width="1280" height="900"></picture></figure>
     </div>
 
     <div class="feature flip">
@@ -129,7 +150,7 @@
           <li>Never exposed to patients or partners. If it leaked, doctors would stop pressing the buttons.</li>
         </ul>
       </div>
-      <figure class="shot"><img src="/img/doctor.png" alt="The doctor module: the current patient, a timer, End & call next" loading="lazy"></figure>
+      <figure class="shot"><picture><source data-theme-src srcset="/img/doctor-dark.png" media="(prefers-color-scheme: dark)"><img src="/img/doctor.png" alt="The doctor module: the current patient, a timer, End & call next" loading="lazy" width="1440" height="900"></picture></figure>
     </div>
 
     <div class="feature">
@@ -139,7 +160,7 @@
         <h3 class="mt">Insights in words, not charts</h3>
         <p>"Dr Hassan's median consultation is 13 minutes but he is scheduled at 10. Moving to 12-minute slots would cut the average wait and cost two slots a session." The weekly digest tells the owner something they didn't know, every week.</p>
       </div>
-      <figure class="shot"><img src="/img/insights.png" alt="Insights: findings in plain sentences, doctor punctuality, and the calibration of the estimate" loading="lazy"></figure>
+      <figure class="shot"><picture><source data-theme-src srcset="/img/insights-dark.png" media="(prefers-color-scheme: dark)"><img src="/img/insights.png" alt="Insights: findings in plain sentences, doctor punctuality, and the calibration of the estimate" loading="lazy" width="1440" height="900"></picture></figure>
     </div>
   </div>
 </section>
@@ -170,9 +191,9 @@
     <p class="eyebrow">For patients</p>
     <h2>Wait at a café, not in a lobby</h2>
     <div class="phones">
-      <figure><img src="/img/app-tracker.png" alt="Live tracker: your token, now serving, a time window and when to leave" loading="lazy"><figcaption><strong>Watch the queue live.</strong> Which token is in the room, how many people are ahead, a window you can plan around — and a push that says <em>leave now</em>.</figcaption></figure>
-      <figure><img src="/img/app-search.png" alt="Find care: search by symptom, filter by island, language, gender and payer" loading="lazy"><figcaption><strong>Find the right doctor.</strong> By island, by language spoken, by whether they take Aasandha. Symptoms route to a kind of doctor — never to a diagnosis — and emergencies are intercepted first.</figcaption></figure>
-      <figure><img src="/img/app-wallet.png" alt="Wallet: identity, Aasandha cover, household members and a referral letter" loading="lazy"><figcaption><strong>Carry the paperwork.</strong> ID, Aasandha status and GP referral letters in one place, available offline — because the letter left on the island is a wasted trip. Book and track for your children and parents from one account.</figcaption></figure>
+      <figure><img src="/img/app-tracker.png" alt="Live tracker: your token, now serving, a time window and when to leave" loading="lazy" width="430" height="932"><figcaption><strong>Watch the queue live.</strong> Which token is in the room, how many people are ahead, a window you can plan around — and a push that says <em>leave now</em>.</figcaption></figure>
+      <figure><img src="/img/app-search.png" alt="Find care: search by symptom, filter by island, language, gender and payer" loading="lazy" width="430" height="932"><figcaption><strong>Find the right doctor.</strong> By island, by language spoken, by whether they take Aasandha. Symptoms route to a kind of doctor — never to a diagnosis — and emergencies are intercepted first.</figcaption></figure>
+      <figure><img src="/img/app-wallet.png" alt="Wallet: identity, Aasandha cover, household members and a referral letter" loading="lazy" width="430" height="1289"><figcaption><strong>Carry the paperwork.</strong> ID, Aasandha status and GP referral letters in one place, available offline — because the letter left on the island is a wasted trip. Book and track for your children and parents from one account.</figcaption></figure>
     </div>
     <p class="fine center">Installs from the browser on Android and iPhone — no app store needed.</p>
   </div>
@@ -239,7 +260,7 @@ POST /v1/webhook_endpoints
       </div>
       <label>Anything we should know? <textarea name="message" rows="3"></textarea></label>
       <button class="btn primary lg" type="submit">Request a demo</button>
-      <p class="fine" id="lead-status"></p>
+      <p class="fine" id="lead-status" role="status" aria-live="polite"></p>
     </form>
   </div>
 </section>
