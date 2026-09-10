@@ -145,7 +145,6 @@
 .col .pill.status.danger .dot { background: var(--back-stripe); box-shadow: none; }
 .col .pill.status.brand { background: var(--brand-soft); color: var(--brand-deep); }
 .col .pill.status.brand .dot { background: var(--brand); box-shadow: none; }
-.col .menu { right: 0; top: 40px; --origin: top right; min-width: 240px; }
 
 /* List well */
 .col .list {
@@ -265,9 +264,52 @@
 /* View-only roles: cards and columns without controls. */
 .col.view-only .more, .col.view-only .action { display: none; }
 
+/* ------------------------------------------------------------------- press */
+/* Pointer-down feedback (Safari delays :active on touch): every pressable on the board. */
+.col .done-row, .col .group-head { transition: transform var(--d-release) var(--ease-out), background-color 120ms var(--ease-color); }
+.board .btn[data-pressed], .col .done-row[data-pressed], .col .group-head[data-pressed] { transform: scale(.97); transition-duration: var(--d-press); }
+.col .done-row[data-pressed] { background: var(--surface-2); }
+
+/* -------------------------------------------------------------------- drag */
+/* The lifted card lives in a fixed layer and tracks the pointer 1:1 (transform
+   inline, on the node); `scale` composes with it so the lift and the settle
+   are the only tweened parts. The .slot placeholder keeps its place. */
+#drag-layer { position: fixed; inset: 0; pointer-events: none; z-index: 60; }
+body[data-dragging], body[data-dragging] * { cursor: grabbing !important; user-select: none; }
+.tok.lifted, .tok.settling { transition: box-shadow var(--d-lift) var(--ease-out), opacity var(--d-lift) var(--ease-out), scale var(--d-lift) var(--ease-out), background-color var(--d-color) var(--ease-color); }
+.tok.lifted { box-shadow: var(--shadow-lift); opacity: .96; scale: 1.03; will-change: transform; }
+.tok.lifted.no-drop { opacity: .85; }                                                 /* "won't drop here" */
+.tok.settling { box-shadow: var(--shadow-raised); scale: 1; transition-duration: var(--d-release); }
+.slot { border: 2px dashed color-mix(in srgb, var(--brand) 40%, transparent); border-radius: 12px; box-sizing: border-box; flex: none; }
+.slot.away { border-radius: 0; }
+@media (hover: hover) and (pointer: fine) {
+  .col:not(.view-only) .tok.present, .col:not(.view-only) .tok.away { cursor: grab; }
+  .col .tok .btn, .col .tok .flag { cursor: pointer; }
+}
+
 /* ----------------------------------------------------------------- walk-in */
-dialog.modal.walkin .found { min-height: 20px; margin-top: 4px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-dialog.modal.walkin .found .btn.sm { min-height: 32px; }
+.sheet.walkin .seg { margin-bottom: 14px; }
+.sheet.walkin .input-wrap { position: relative; }
+.sheet.walkin .input-wrap .spinner.lookup { position: absolute; right: 14px; top: 50%; margin-top: -7px; }
+.sheet.walkin .found { min-height: 20px; margin-top: 4px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font: 400 13px/1.4 var(--ui); color: var(--text-2); }
+.sheet.walkin .found.ok { color: var(--here); font-weight: 600; }
+.sheet.walkin .found.err { color: var(--back); font-weight: 600; }
+.sheet.walkin .found .btn.sm { min-height: 32px; padding: 0 10px; }
+.sheet.walkin div.field > span:first-child { display: block; font-size: 13px; font-weight: 700; color: var(--text-2); margin-bottom: 4px; }
+.sheet.walkin div.field { margin-bottom: 12px; }
+.sheet.walkin .dup { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 0 0; font: 600 13px/1.4 var(--ui); color: var(--called); }
+.sheet.walkin .prio-field .sheet-row.prio { padding: 0 4px; }
+.sheet.walkin .prio-body { padding: 8px 0 0; }
+
+/* ---------------------------------------------------------- done sheet rows */
+.done-list { display: flex; flex-direction: column; }
+.done-item { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 6px 0; }
+.done-item + .done-item { border-top: 1px solid var(--border); }
+.done-item .glyph { width: 20px; text-align: center; color: var(--text-3); flex: none; }
+.done-item .badge { font: 600 13px/1 var(--num); padding: 4px 6px; border-radius: 6px; background: var(--surface-2); color: var(--text-2); flex: none; }
+.done-item .txt { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.done-item .name { font: 600 15px/1.25 var(--ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.done-item .sub { font: 400 13px/1.3 var(--ui); color: var(--text-3); }
 
 /* ---------------------------------------------------------------- dark mode */
 /* Tinted surfaces are ~1:1 against --surface in dark: cards get an edge; the stripe, glyph and status word carry the state. */
@@ -287,7 +329,7 @@ dialog.modal.walkin .found .btn.sm { min-height: 32px; }
   .btn[data-pressed], .chip[data-pressed], .tok[data-pressed], .chip:active, .tok:active, .col.slim > .slimbtn:active, .col .more:active, .strip .needs:active { transform: none; }
   .btn.ghost[data-pressed], .chip[data-pressed], .btn.ghost:active, .chip:active { background: var(--surface-2); }
   .tok .expand { transition-duration: 0ms; }
-  .tok.lifted { transform: none; }
+  .tok.lifted { scale: 1; }                 /* shadow only; the card is still carried 1:1 — tracking is manipulation, not animation */
   .tok, .col { --d-move: 0ms; --d-shift: 0ms; }
   .col .group-head .chev { transition: none; }
 }

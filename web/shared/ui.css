@@ -235,3 +235,122 @@ dialog.modal .log { font-family: var(--num); font-size: var(--t-sm); white-space
   .btn, .input, .pill { border: 1px solid ButtonText; }
   .live-dot { forced-color-adjust: none; }
 }
+
+/* -------------------------------------------------------------------- sheets */
+/* One component for every secondary surface (web/shared/sheet.js): a bottom
+   sheet on touch and below 1100 px, a popover beside its anchor on a fine
+   pointer. Centred with auto margins so the only transform is translateY;
+   enters 260 ms, leaves 200 ms, both --ease-out; the drag release is a spring. */
+.sheet-wrap { position: fixed; inset: 0; z-index: 70; }
+.sheet-scrim { position: absolute; inset: 0; background: var(--scrim, rgba(6, 16, 18, .45)); opacity: 0; transition: opacity var(--d-sheet-out, 200ms) var(--ease-out); }
+.sheet-wrap.is-open .sheet-scrim { opacity: 1; }
+.sheet-wrap[data-mode="pop"] .sheet-scrim { background: transparent; }
+.sheet {
+  position: absolute; left: 0; right: 0; bottom: var(--kb, 0px); margin-inline: auto; width: min(560px, 100%);
+  max-height: min(85dvh, calc(100dvh - 56px)); display: flex; flex-direction: column;
+  background: var(--surface); color: var(--text); border-radius: var(--radius-sheet, 20px) var(--radius-sheet, 20px) 0 0;
+  border-top: 1px solid var(--border-strong); box-shadow: var(--shadow-sheet, var(--shadow-lg));
+  padding-bottom: var(--safe-b, 0px); outline: none; touch-action: none;
+  transform: translateY(100%); opacity: 0;
+  transition: transform var(--d-sheet-out, 200ms) var(--ease-out), opacity var(--d-sheet-out, 200ms) var(--ease-out);
+}
+.sheet-wrap.is-open .sheet { transform: none; opacity: 1; transition-duration: var(--d-sheet-in, 260ms); }
+.sheet-wrap[data-instant] .sheet, .sheet-wrap[data-instant] .sheet-scrim { transition-duration: 0ms !important; }
+.sheet.grabbed, .sheet.dismissing { transition: none; }
+.sheet-wrap[data-mode="pop"] .sheet {
+  position: fixed; left: auto; right: auto; bottom: auto; margin: 0; width: 320px; max-height: calc(100dvh - 16px);
+  border-radius: 14px; border: 1px solid var(--border); box-shadow: var(--shadow-pop, var(--shadow-lg)); padding-bottom: 0;
+  transform: scale(.96); opacity: 0; transition-duration: var(--d-pop-out, 120ms);
+}
+.sheet-wrap[data-mode="pop"].is-open .sheet { transform: none; opacity: 1; transition-duration: var(--d-pop-in, 150ms); }
+.sheet .grabber { width: 36px; height: 5px; border-radius: 3px; background: var(--border-strong); margin: 8px auto 0; flex: none; }
+.sheet-head { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 6px 8px 6px 20px; flex: none; cursor: grab; }
+.sheet-wrap[data-mode="pop"] .sheet-head { cursor: default; min-height: 52px; padding-left: 16px; }
+.sheet-head .titles { flex: 1 1 auto; min-width: 0; }
+.sheet-title { margin: 0; font: 700 17px/1.25 var(--ui); letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet-sub { margin: 2px 0 0; font: 400 13px/1.4 var(--ui); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet-x, .sheet-back {
+  width: 44px; height: 44px; flex: none; border: 0; background: transparent; border-radius: 12px; color: var(--text-2); font-size: 24px; line-height: 1;
+  display: grid; place-items: center; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  transition: transform var(--d-release, 160ms) var(--ease-out), background-color 120ms var(--ease-color, ease);
+}
+.sheet-back { margin-left: -8px; }
+.sheet-x:active, .sheet-back:active, .sheet-x[data-pressed], .sheet-back[data-pressed] { transform: scale(.97); transition-duration: var(--d-press); }
+@media (pointer: coarse) { .sheet-wrap[data-mode="sheet"] .sheet-x { display: none; } }
+.sheet-body { overflow-y: auto; overscroll-behavior: contain; padding: 0 20px 16px; min-height: 0; flex: 1 1 auto; -webkit-overflow-scrolling: touch; }
+.sheet-wrap[data-mode="pop"] .sheet-body { padding: 0 8px 8px; }
+.sheet-foot { display: flex; gap: 10px; padding: 8px 20px 16px; flex: none; }
+.sheet-foot .btn { flex: 1 1 0; }
+.sheet-wrap[data-mode="pop"] .sheet-foot { padding: 8px; }
+.sheet .btn.lg { min-height: var(--ctl-lg, 48px); font-size: 15px; border-radius: 12px; }
+.sheet .btn.danger.primary { background: var(--back-stripe, var(--danger)); border-color: var(--back-stripe, var(--danger)); color: #fff; }
+.sheet-lede { margin: 4px 0 8px; font: 400 15px/1.45 var(--ui); color: var(--text-2); }
+.sheet-note { margin: 6px 0 0; font: 400 13px/1.45 var(--ui); color: var(--text-2); min-height: 20px; }
+.sheet-error { margin: 8px 0 0; font: 600 13px/1.45 var(--ui); color: var(--danger); min-height: 0; }
+.sheet-error:empty { display: none; }
+.sheet-rows { display: flex; flex-direction: column; margin: 0 -8px; }
+.sheet-wrap[data-mode="pop"] .sheet-rows { margin: 0; }
+.sheet-row {
+  display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 12px; border: 0; background: transparent; color: var(--text);
+  font: 500 15px/1.3 var(--ui); text-align: left; width: 100%; border-radius: 10px; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  transition: transform var(--d-release, 160ms) var(--ease-out), background-color 120ms var(--ease-color, ease);
+}
+.sheet-row + .sheet-row { border-top: 1px solid var(--border); border-radius: 0 0 10px 10px; }
+.sheet-row:active, .sheet-row[data-pressed] { transform: scale(.985); transition-duration: var(--d-press); background: var(--surface-2); }
+.sheet-row .ic { width: 20px; text-align: center; color: var(--text-2); flex: none; }
+.sheet-row .lbl { flex: 1 1 auto; min-width: 0; }
+.sheet-row .hint { font: 400 13px/1.3 var(--ui); color: var(--text-3); white-space: nowrap; }
+.sheet-row.danger, .sheet-row.danger .ic { color: var(--back, var(--danger)); }
+.sheet-row[disabled] { opacity: .45; cursor: default; }
+.sheet-row.sep { border-top: 1px solid var(--border-strong); margin-top: 4px; padding-top: 4px; }
+.sheet .input, .sheet select.input, .sheet textarea.input { min-height: 48px; font-size: 16px; padding: 0 14px; border-radius: 12px; }
+.sheet textarea.input { padding: 12px 14px; min-height: 96px; }
+.sheet label.field > span { font-size: 13px; }
+.sheet .field-help { font: 400 12px/1.4 var(--ui); color: var(--text-3); margin-top: 4px; min-height: 17px; }
+.sheet .field-help.err { color: var(--back, var(--danger)); font-weight: 600; }
+.sheet .field-help.ok { color: var(--here, var(--ok)); }
+/* Segmented control (40 px) and choice chips (44 px): instant — these are form controls, not motion. */
+.seg { display: flex; gap: 2px; padding: 2px; border-radius: 10px; background: var(--surface-2); height: 40px; }
+.seg-item {
+  flex: 1 1 0; border: 0; border-radius: 8px; background: transparent; color: var(--text-2); font: 600 14px/1 var(--ui); cursor: pointer;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation; position: relative;
+}
+.seg-item::after { content: ""; position: absolute; inset: -4px 0; }
+.seg-item[aria-checked="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-card, var(--shadow-sm)); }
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip-opt {
+  min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--border-strong); background: transparent; color: var(--text);
+  font: 600 14px/1 var(--ui); cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  transition: transform var(--d-release, 160ms) var(--ease-out), background-color 120ms var(--ease-color, ease), border-color 120ms var(--ease-color, ease);
+}
+.chip-opt:active { transform: scale(.97); transition-duration: var(--d-press); }
+.chip-opt[aria-checked="true"] { background: var(--brand-soft); border-color: var(--brand); color: var(--brand-deep); }
+.sheet-radios { display: flex; flex-direction: column; }
+.sheet-radio {
+  display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 4px; cursor: pointer; font: 500 15px/1.3 var(--ui);
+  -webkit-tap-highlight-color: transparent;
+}
+.sheet-radio + .sheet-radio { border-top: 1px solid var(--border); }
+.sheet-radio input { flex: none; }
+.sheet-radio .lbl { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet-radio .hint { font: 400 13px/1.3 var(--ui); color: var(--text-3); white-space: nowrap; }
+.sheet-radio .st { width: 10px; height: 10px; border-radius: 50%; background: var(--wait); flex: none; }
+.sheet-radio .st.on { background: var(--here-stripe, var(--ok)); }
+.sheet-radio .st.pause { background: var(--called-stripe, var(--warn)); }
+@media (hover: hover) and (pointer: fine) {
+  .sheet-row:hover, .sheet-x:hover, .sheet-back:hover { background: var(--surface-2); }
+  .chip-opt:hover { background: var(--surface-2); }
+  .chip-opt[aria-checked="true"]:hover { background: var(--brand-soft); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet, .sheet-wrap.is-open .sheet, .sheet-wrap[data-mode="pop"] .sheet { transform: none !important; transition-property: opacity; transition-duration: 150ms; }
+  .sheet-row:active, .sheet-x:active, .sheet-back:active, .chip-opt:active { transform: none; }
+}
+@media (prefers-reduced-transparency: reduce) { .sheet-scrim { background: rgba(6, 16, 18, .7); } .sheet-wrap[data-mode="pop"] .sheet-scrim { background: transparent; } }
+@media (prefers-contrast: more) { .sheet, .sheet-row + .sheet-row, .chip-opt { border-color: var(--border-strong); } }
+@media (forced-colors: active) { .sheet { border: 1px solid CanvasText; } .seg-item[aria-checked="true"], .chip-opt[aria-checked="true"] { forced-color-adjust: none; background: Highlight; color: HighlightText; } }
+/* Press feedback inside sheets lands on pointerdown (sheet.js sets data-pressed; Safari delays :active on touch). */
+.sheet .btn[data-pressed], .chip-opt[data-pressed] { transform: scale(.97); transition-duration: var(--d-press); }
+.sheet-radio[data-pressed] { background: var(--surface-2); }
+.sheet-body { touch-action: pan-y; }   /* the panel is touch-action: none for the handle drag; its scroller still pans */
+@media (prefers-reduced-motion: reduce) { .sheet .btn[data-pressed], .chip-opt[data-pressed] { transform: none; background: var(--surface-2); } }
