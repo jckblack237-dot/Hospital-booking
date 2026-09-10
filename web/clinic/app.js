@@ -145,6 +145,8 @@ let activeView = null;
 let signingOut = false;
 
 export const isBoardTab = () => state.tab === 'board' || state.tab === 'doctor';
+/** The <nav class="strip"> row between header and view; the board view mounts its doctor chips into it. */
+export const stripSlot = () => shell?.refs.strip ?? null;
 
 async function signOut({ server = true } = {}) {
   if (signingOut) return;
@@ -583,7 +585,10 @@ function buildShell() {
   const banner = h('div.banner', { role: 'status', hidden: true }, refs.bannerText = h('span'),
     h('button.btn.sm', { type: 'button', onClick: () => { if (isBoardTab()) fetchBoard().catch(noteOffline); else heartbeatOnce(); } }, 'Retry now'));
   const view = h('div.view', { 'data-keep-scroll': 'view' });
-  const root = h('div.shell', { class: railPinned() ? 'pinned' : '' }, rail, h('div.main', {}, head, banner, view));
+  // Doctor strip slot: the board mounts its chips here; other tabs hide the row (.main.no-strip).
+  refs.strip = h('nav.strip', { 'aria-label': 'Doctors' });
+  refs.main = h('div.main', {}, head, banner, refs.strip, view);
+  const root = h('div.shell', { class: railPinned() ? 'pinned' : '' }, rail, refs.main);
   return { root, rail, head, view, banner, refs };
 }
 
@@ -704,6 +709,7 @@ export function setTab(key) {
   mountedTab = key;
   activeView = VIEWS[key];
   shell.view.className = `view${key === 'board' ? ' board-view' : ''}`;
+  shell.refs.main.classList.toggle('no-strip', key !== 'board');
   shell.view.dataset.tab = key;
   shell.view.scrollTop = 0;
   activeView.mount(shell.view);

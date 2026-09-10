@@ -15,7 +15,13 @@ h3 { font-size: var(--t-lg); letter-spacing: var(--tr-lg); line-height: var(--lh
    from growing the grid track, which is what once pushed sign-out below the fold. */
 .shell { display: grid; grid-template-columns: 72px 1fr; height: 100dvh; min-height: 0; }
 .shell.pinned { grid-template-columns: 220px 1fr; }
-.main { display: grid; grid-template-rows: auto auto 1fr; min-width: 0; min-height: 0; overflow: hidden; }
+.main { display: grid; grid-template-rows: auto auto auto 1fr; min-width: 0; min-height: 0; overflow: hidden; }
+/* header · banner · doctor strip (board tab only, styled in views/board.css) · view.
+   The view is pinned to the 1fr row: a hidden banner takes no grid cell, so auto-placement would slide it up. */
+.main > .view { grid-row: 4; }
+.main.no-strip { grid-template-rows: auto auto 1fr; }
+.main.no-strip .strip { display: none; }
+.main.no-strip > .view { grid-row: 3; }
 
 /* ------------------------------------------------------------------- rail */
 .rail {

@@ -70,6 +70,41 @@
   --shadow-sm: 0 1px 2px rgba(16, 32, 31, .05), 0 2px 8px rgba(16, 32, 31, .04);
   --shadow: 0 1px 2px rgba(16, 32, 31, .05), 0 6px 18px rgba(16, 32, 31, .07);
   --shadow-lg: 0 8px 32px rgba(16, 32, 31, .16);
+
+  /* ---- board spec §1 (additive; the board reads these, other tabs keep the base palette) ---- */
+  /* sizes, tiers, controls */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px;
+  --radius-sm: 8px; --radius-sheet: 20px; --radius-pill: 999px;
+  --rail-w: 72px; --tabbar-h: 64px; --head-h: 56px; --strip-h: 48px; --col-head-h: 76px;
+  --col-min: 272px; --col-max: 400px; --col-slim: 56px; --col-gap: 12px; --board-pad: 16px; --peek: 28px;
+  --tier-hero: 90px; --tier-present: 64px; --tier-away: 44px; --list-pad: 6px; --list-gap: 6px;
+  --group-head-h: 28px; --done-row-h: 36px;
+  --hit: 44px; --ctl: 40px; --ctl-sm: 36px; --ctl-lg: 48px; --chip-h: 40px; --safe-b: env(safe-area-inset-bottom, 0px);
+  /* type scale (six steps) */
+  --fs-meta: 12px;  --lh-meta: 1.3;   --ls-meta: .01em;
+  --fs-body: 13px;  --lh-body: 1.4;   --ls-body: 0;
+  --fs-ctl: 14px;   --lh-ctl: 1;      --ls-ctl: 0;
+  --fs-name: 16px;  --lh-name: 1.25;  --ls-name: -.005em;
+  --fs-col: 17px;   --lh-col: 1.25;   --ls-col: -.01em;
+  --fs-title: 20px; --lh-title: 1.2;  --ls-title: -.015em;
+  --fs-clock: 22px; --fs-timer: 18px;
+  /* state marks: 6 px stripes are colour marks (non-text, ≥3:1), room = in consult, attn = 8 px dots only */
+  --here-stripe: #1f8a5b; --called-stripe: #b8730a; --back-stripe: #c8433f;
+  --room: #0a6b68; --room-bg: #e8f5f4; --room-stripe: #0e8f8a;
+  --attn: #c8433f;
+  --flag-violet: var(--violet); --flag-violet-bg: var(--violet-bg);
+  --scrim: rgba(6, 16, 18, .45);
+  --shadow-card:   0 1px 2px rgba(16, 32, 31, .05), 0 2px 8px rgba(16, 32, 31, .04);
+  --shadow-raised: 0 1px 2px rgba(16, 32, 31, .05), 0 6px 18px rgba(16, 32, 31, .07);
+  --shadow-lift:   0 2px 4px rgba(16, 32, 31, .08), 0 14px 32px rgba(16, 32, 31, .18);
+  --shadow-sheet:  0 -8px 40px rgba(16, 32, 31, .18);
+  --shadow-pop:    0 1px 2px rgba(16, 32, 31, .06), 0 12px 32px rgba(16, 32, 31, .14);
+  --toast-bg: var(--text); --toast-fg: var(--bg); --toast-undo: #8fdcd7;
+  /* motion: enters/exits ease-out, on-screen moves ease-move, colour plain ease; nothing over 300 ms */
+  --ease-color: ease;
+  --d-release: 160ms; --d-fade: 150ms; --d-color: 200ms; --d-expand: 200ms; --d-collapse: 160ms;
+  --d-move: 240ms; --d-shift: 160ms; --d-sheet-in: 260ms; --d-sheet-out: 200ms;
+  --d-pop-in: 150ms; --d-pop-out: 120ms; --d-toast-in: 250ms; --d-toast-out: 200ms; --d-scroll: 240ms; --d-lift: 120ms;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -88,6 +123,16 @@
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, .35), 0 2px 8px rgba(0, 0, 0, .25);
     --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 18px rgba(0, 0, 0, .35);
     --shadow-lg: 0 10px 40px rgba(0, 0, 0, .55);
+    /* board spec §1.4 (additive) */
+    --here-stripe: #5ccf94; --called-stripe: #e6a23f; --back-stripe: #ef7b77;
+    --room: #8fdcd7; --room-bg: #143a3a; --room-stripe: #35b8b1; --attn: #ef7b77;
+    --scrim: rgba(0, 0, 0, .58);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, .4), 0 2px 8px rgba(0, 0, 0, .3);
+    --shadow-raised: 0 1px 2px rgba(0, 0, 0, .45), 0 6px 18px rgba(0, 0, 0, .4);
+    --shadow-lift: 0 2px 4px rgba(0, 0, 0, .5), 0 14px 32px rgba(0, 0, 0, .6);
+    --shadow-sheet: 0 -8px 40px rgba(0, 0, 0, .6);
+    --shadow-pop: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 32px rgba(0, 0, 0, .55);
+    --toast-bg: #e6f0ee; --toast-fg: #0b1516; --toast-undo: #0a6b68;
   }
 }
 
@@ -106,6 +151,16 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, .35), 0 2px 8px rgba(0, 0, 0, .25);
   --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 18px rgba(0, 0, 0, .35);
   --shadow-lg: 0 10px 40px rgba(0, 0, 0, .55);
+  /* board spec §1.4 (additive) */
+  --here-stripe: #5ccf94; --called-stripe: #e6a23f; --back-stripe: #ef7b77;
+  --room: #8fdcd7; --room-bg: #143a3a; --room-stripe: #35b8b1; --attn: #ef7b77;
+  --scrim: rgba(0, 0, 0, .58);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, .4), 0 2px 8px rgba(0, 0, 0, .3);
+  --shadow-raised: 0 1px 2px rgba(0, 0, 0, .45), 0 6px 18px rgba(0, 0, 0, .4);
+  --shadow-lift: 0 2px 4px rgba(0, 0, 0, .5), 0 14px 32px rgba(0, 0, 0, .6);
+  --shadow-sheet: 0 -8px 40px rgba(0, 0, 0, .6);
+  --shadow-pop: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 32px rgba(0, 0, 0, .55);
+  --toast-bg: #e6f0ee; --toast-fg: #0b1516; --toast-undo: #0a6b68;
 }
 
 * { box-sizing: border-box; }
