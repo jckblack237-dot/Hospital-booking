@@ -10,6 +10,17 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import WebSocket from 'ws';
 
+/** Poll `fn` until it returns a truthy value or `ms` elapses; resolves the value (or undefined). */
+async function until(fn, ms) {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const v = fn();
+    if (v) return v;
+    if (Date.now() > deadline) return v;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
 process.env.PORT = '0';
 const { server } = await import('../server/index.js');
 const { db } = await import('../server/db.js');
@@ -441,16 +452,19 @@ test('token.changed on a checkin; ticks but no projection while nothing changes'
   // nearly freeze it so that no start window crosses a minute boundary.
   clock.setTime(session.scheduled_start + 30 * 60_000);
   clock.setSpeed(0.001);
+  let ws;
   try {
     await post(`/api/clinic/tokens/${tokens[1].id}/checkin`);
     await post(`/api/clinic/tokens/${tokens[1].id}/start`);
-    const { ws, received } = await connect([`clinic:${clinicId}`], staffToken);
+    let received;
+    ({ ws, received } = await connect([`clinic:${clinicId}`], staffToken));
 
     const before = received.length;
     const res = await post(`/api/clinic/tokens/${a.id}/checkin`);
     assert.equal(res.status, 200);
-    await sleep(100);
-    const changed = received.slice(before).find((m) => m.type === 'token.changed' && m.token.id === a.id);
+    // Socket delivery is async and the runner may be under load: wait for the
+    // message, bounded, instead of assuming it lands inside a fixed sleep.
+    const changed = await until(() => received.slice(before).find((m) => m.type === 'token.changed' && m.token.id === a.id), 3000);
     assert.ok(changed, 'the board hears token.changed');
     assert.equal(changed.action, 'checkin');
     assert.equal(changed.previousState, 'booked');
@@ -465,17 +479,22 @@ test('token.changed on a checkin; ticks but no projection while nothing changes'
     assert.ok(projection.version > projection.previousVersion);
 
     const quietFrom = received.length;
-    await sleep(5000);
+    // At least three ticks, however slowly the loaded runner gets to them.
+    await until(() => received.slice(quietFrom).filter((m) => m.type === 'tick').length >= 3, 9000);
     const quiet = received.slice(quietFrom);
     const ticks = quiet.filter((m) => m.type === 'tick');
     assert.ok(ticks.length >= 3, `expected ticks while the session is live, saw ${ticks.length}`);
     assert.ok(ticks.every((m) => m.clinicId === clinicId && typeof m.serverNow === 'number'));
-    assert.deepEqual(quiet.filter((m) => m.type === 'projection'), [], 'no projection while nothing changes');
+    // Only THIS session is quiet: setTime() above moved every other live
+    // session's start windows, and their first tick rightly announces that.
+    assert.deepEqual(quiet.filter((m) => m.type === 'projection' && m.sessionId === session.id), [], 'no projection while nothing changes');
     const versionBefore = db.prepare('SELECT version FROM sessions WHERE id = ?').get(session.id).version;
     await sleep(1100);
     assert.equal(db.prepare('SELECT version FROM sessions WHERE id = ?').get(session.id).version, versionBefore, 'version does not bump on ticks');
-    ws.close();
   } finally {
+    // Close on every path: an open socket after a failed assertion keeps the
+    // whole test process alive.
+    ws?.close();
     clock.setSpeed(1);
     clock.setTime(Date.now());
   }
