@@ -1,3 +1,136 @@
-/* Patients — search, record, ledgers. The view currently builds on the shared
-   report primitives in ui.css (.grid, .stat, .section-title, table.data);
-   view-specific rules land here when the view is upgraded. */
+/* Patients — a master/detail: the finder on the left, the record on the right.
+   Both panes scroll on their own at ≥1024 px; below that they stack and the
+   finder folds to a bar once someone is chosen. Tokens only; components from
+   ui.css. Nothing here animates on a poll — only presses and dialogs move. */
+
+.patients { display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); gap: var(--s4); height: 100%; min-height: 0; }
+.patients .min0 { min-width: 0; }
+/* Text in this view sits at 13 px or above, pills and table headings included. */
+.patients .pill, .patients table.data th, .patients .section-title { font-size: var(--t-sm); letter-spacing: var(--tr-sm); }
+.patients .section-title { text-transform: none; letter-spacing: var(--tr-sm); font-size: var(--t-md); color: var(--text-2); margin: 0 0 var(--s3); }
+.patients .section-title + .help { margin: calc(-1 * var(--s2)) 0 var(--s3); }
+
+/* ------------------------------------------------------------------ finder */
+.plist { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.plist .search { position: relative; padding: var(--s3) var(--s3) 0; flex: none; }
+.plist .search .input { padding-right: 40px; }
+.plist .search .spinner { position: absolute; right: calc(var(--s3) + 14px); top: calc(var(--s3) + 15px); }
+.plist-head { display: flex; align-items: center; min-height: 28px; padding: var(--s1) var(--s4) 0; flex: none; }
+.plist-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--s2) var(--s2) var(--s3); -webkit-overflow-scrolling: touch; }
+.plist-rows { display: flex; flex-direction: column; gap: 2px; }
+.plist-rows[aria-busy="true"] { opacity: .7; transition: opacity var(--d-fast) ease; }
+
+/* A row is a plain button, not a .btn: it wraps nothing and truncates everything (F24). */
+.prow {
+  display: flex; align-items: center; gap: var(--s3); width: 100%; min-width: 0; min-height: 56px;
+  padding: var(--s2) var(--s3); border: 0; border-radius: var(--r); background: transparent; color: var(--text);
+  text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none;
+  transition: transform var(--d-press) var(--ease-out), background-color 120ms ease;
+}
+.prow:active { transform: scale(.97); }
+.prow[aria-selected="true"] { background: var(--brand-soft); }
+.prow .avatar {
+  width: 36px; height: 36px; border-radius: 50%; flex: none; display: grid; place-items: center;
+  background: var(--surface-2); color: var(--text-2); font-weight: 700; font-size: var(--t-md);
+}
+.prow[aria-selected="true"] .avatar { background: var(--brand); color: var(--primary-fg); }
+.prow .txt { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; gap: 1px; }
+.prow .nm { font-weight: 650; font-size: var(--t-md); line-height: var(--lh-md); }
+.prow .sub { font-size: var(--t-sm); letter-spacing: var(--tr-sm); color: var(--text-3); font-variant-numeric: tabular-nums; }
+.patients bdi { unicode-bidi: plaintext; }
+/* A Thaana name resolves RTL inside its box but stays anchored left, in line with the Latin rows around it. */
+.patients [dir="auto"] { text-align: left; }
+
+/* Folded finder (stacked layout, after a choice). */
+.plist .fold { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: var(--s1) var(--s2) var(--s2) var(--s4); min-height: 44px; flex: none; }
+.plist.collapsed .plist-head { display: none; }
+
+/* ------------------------------------------------------------------ states */
+.patients .state { padding: var(--s7) var(--s4); text-align: center; color: var(--text-3); display: flex; flex-direction: column; align-items: center; gap: var(--s2); }
+.patients .state .t { font-weight: 650; color: var(--text-2); font-size: var(--t-md); }
+.patients .state.fail { color: var(--text-2); }
+.patients .state.fail .t { color: var(--danger); }
+.patients .state.fail .btn { margin-top: var(--s2); }
+.patients .state.pick { padding-top: var(--s8); }
+.patients .state.pick .t { font-size: var(--t-lg); letter-spacing: var(--tr-lg); }
+
+/* Skeletons are still: the spinner is the only in-flight motion on the page. */
+.skel { display: flex; flex-direction: column; gap: var(--s2); }
+.skel i { display: block; height: 12px; border-radius: var(--r-pill); background: var(--surface-3); margin: var(--s2) 0; width: 100%; }
+.skel i.thin { height: 10px; }
+.skel i.w30 { width: 30%; } .skel i.w40 { width: 40%; } .skel i.w60 { width: 60%; } .skel i.w80 { width: 80%; }
+.skel-row { display: flex; align-items: center; gap: var(--s3); min-height: 56px; padding: var(--s2) var(--s3); }
+.skel-row .a { width: 36px; height: 36px; border-radius: 50%; background: var(--surface-3); flex: none; }
+.skel-row .bars { flex: 1 1 auto; min-width: 0; }
+.skel-row .bars i:first-child { width: 55%; } .skel-row .bars i:last-child { width: 35%; height: 10px; }
+.skel.detail { gap: var(--s4); }
+
+/* ------------------------------------------------------------------ record */
+.pdetail { min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding-bottom: var(--s4); }
+.pdetail[aria-busy="true"] .detail-body { opacity: .7; transition: opacity var(--d-fast) ease; }
+.detail-body { gap: var(--s4); }
+.phead .top { align-items: flex-start; }
+.phead .actions { flex: none; flex-wrap: wrap; justify-content: flex-end; }
+.pname {
+  margin: 0; font-size: var(--t-2xl); line-height: var(--lh-2xl); letter-spacing: var(--tr-2xl); font-weight: 700;
+  overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
+}
+.pmeta { margin-top: var(--s1); color: var(--text-2); font-size: var(--t-sm); letter-spacing: var(--tr-sm); overflow-wrap: anywhere; }
+.phead .tags { margin-top: var(--s3); }
+.phead .help { margin-top: var(--s2); }
+
+/* Household, referrals, messages, invoices: rows that never widen the page. */
+.hrow, .mrow, .irow { display: flex; align-items: center; gap: var(--s3); min-width: 0; padding: var(--s2) 0; border-top: 1px solid var(--border); }
+.hrow:first-child, .mrow:first-child, .irow:first-child { border-top: 0; padding-top: 0; }
+.hrow .txt, .irow .txt { display: flex; flex-direction: column; min-width: 0; }
+.hrow .nm { font-weight: 650; }
+.hrow .sub, .irow .sub, .mrow .sub, .rrow .sub { font-size: var(--t-sm); letter-spacing: var(--tr-sm); color: var(--text-3); }
+.mrow .txt { min-width: 0; }
+.mrow .body { font-size: var(--t-md); line-height: var(--lh-md); overflow-wrap: anywhere; }
+.mrow .st, .irow .st, .rrow .st { flex: none; }
+.irow .amt { font-variant-numeric: tabular-nums; flex: none; }
+.rrow { padding: var(--s2) 0; border-top: 1px solid var(--border); min-width: 0; }
+.rrow:first-child { border-top: 0; padding-top: 0; }
+.rrow .to { font-weight: 650; }
+.rrow .note { font-size: var(--t-sm); letter-spacing: var(--tr-sm); color: var(--text-2); margin-top: 2px; overflow-wrap: anywhere; }
+
+/* The visit table keeps its own scroll; the page never scrolls sideways. */
+.visits-scroll { overflow: auto; max-height: 360px; border: 1px solid var(--border); border-radius: var(--r); -webkit-overflow-scrolling: touch; }
+.visits-scroll table.data { min-width: 560px; }
+.visits-scroll table.data th { top: 0; }
+.visits-scroll table.data td.doc { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.visits-scroll table.data td.when, .visits-scroll table.data td.tkn, .visits-scroll table.data td.wait { white-space: nowrap; }
+.visits-scroll:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* ------------------------------------------------------------- edit dialog */
+.edit-patient .two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); }
+.edit-patient .input[dir="auto"] { unicode-bidi: plaintext; }
+dialog.modal.edit-patient-dialog { max-width: 480px; }
+
+@media (hover: hover) and (pointer: fine) {
+  .prow:hover { background: var(--surface-2); }
+  .prow[aria-selected="true"]:hover { background: var(--brand-soft); }
+}
+
+/* ------------------------------------------------------------------ stacked */
+@media (max-width: 1023px) {
+  .patients { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); height: auto; }
+  .plist { max-height: min(46dvh, 420px); }
+  .plist.collapsed { max-height: none; }
+  .pdetail { overflow: visible; }
+  .visits-scroll { max-height: 300px; }
+  .phead .top { flex-wrap: wrap; }
+  .phead .actions { width: 100%; justify-content: flex-start; }
+  .edit-patient .two { grid-template-columns: 1fr; gap: 0; }
+}
+@media (max-width: 480px) {
+  .phead .actions .btn { flex: 1 1 auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prow:active { transform: none; background: var(--surface-2); }
+}
+@media (forced-colors: active) {
+  .prow[aria-selected="true"] { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+  .skel i, .skel-row .a { background: GrayText; }
+}
