@@ -70,11 +70,47 @@ export function readProjection(sessionId) {
   return row ? { ...parse(row.body), version: row.version } : null;
 }
 
+/** Rules the 1 Hz ticker may fire: only those whose condition can flip with nothing but time passing. */
+const TIME_RULES = ['leave_now', 'at_risk', 'eta_changed', 'improved'];
+
+const minute = (ms) => Math.floor(ms / 60_000);
+
+/**
+ * Did anything a person could notice change? Entry order or state, who is in
+ * the room, the session state, a pause, or a start window moving by a minute.
+ * A clock tick that changes only `elapsedMinutes` is not material — the client
+ * derives that from `startedAt`. This is what keeps the socket quiet enough for
+ * a board to animate instead of repaint.
+ */
+function diff(previous, projection) {
+  if (!previous) return { material: true, changedTokenIds: projection.entries.map((e) => e.tokenId) };
+  const changed = new Set();
+  const prevByToken = new Map(previous.entries.map((e) => [e.tokenId, e]));
+  for (const e of projection.entries) {
+    const p = prevByToken.get(e.tokenId);
+    if (!p || p.state !== e.state || p.position !== e.position
+      || minute(p.predictedStart.window.from) !== minute(e.predictedStart.window.from)) changed.add(e.tokenId);
+  }
+  const present = new Set(projection.entries.map((e) => e.tokenId));
+  for (const p of previous.entries) if (!present.has(p.tokenId)) changed.add(p.tokenId);
+  const wasServing = previous.nowServing?.tokenId ?? null;
+  const isServing = projection.nowServing?.tokenId ?? null;
+  if (wasServing !== isServing) {
+    if (wasServing) changed.add(wasServing);
+    if (isServing) changed.add(isServing);
+  }
+  const material = changed.size > 0 || previous.state !== projection.state
+    || JSON.stringify(previous.pause ?? null) !== JSON.stringify(projection.pause ?? null);
+  return { material, changedTokenIds: [...changed] };
+}
+
 /**
  * Recompute one session's projection, diff it, and emit notifications for
  * material changes only.
  * @param {string} sessionId
- * @param {{trigger?: string, notify?: boolean}} opts
+ * @param {{trigger?: string, notify?: boolean}} opts — trigger 'tick' is the
+ *   ticker: it may only fire time-driven rules, and it never bumps the version
+ *   unless the projection materially changed.
  */
 export function recompute(sessionId, opts = {}) {
   const session = qSession.get(sessionId);
@@ -107,29 +143,33 @@ export function recompute(sessionId, opts = {}) {
 
   snapshot(projection, at);
 
-  bumpVersion.run(sessionId);
-  const version = qSession.get(sessionId).version;
+  const { material, changedTokenIds } = diff(previous, projection);
+  const previousVersion = previous?.version ?? session.version;
+  if (material) bumpVersion.run(sessionId);
+  const version = material ? qSession.get(sessionId).version : previousVersion;
   projection.version = version;
   projection.doctorName = doctor.name;
   projection.clinicId = session.clinic_id;
   saveProjection.run(sessionId, version, at, JSON.stringify(projection));
 
-  let notifications = [];
+  const notifications = [];
   if (opts.notify !== false) {
+    const only = opts.trigger === 'tick' ? TIME_RULES : null;
     for (const entry of projection.entries) {
-      const decision = evaluate({ entry, previous: prevByToken.get(entry.tokenId), session, now: at });
+      const decision = evaluate({ entry, previous: prevByToken.get(entry.tokenId), session, now: at, only });
       if (decision) notifications.push(decision);
     }
   }
 
+  const trigger = opts.trigger ?? 'refresh';
   for (const fn of listeners) {
     try {
-      fn({ projection, notifications, session, trigger: opts.trigger });
+      fn({ projection, notifications, session, trigger, material, changedTokenIds, previousVersion });
     } catch (err) {
       console.error('[engine] listener failed', err);
     }
   }
-  return { projection, notifications };
+  return { projection, notifications, material, changedTokenIds, previousVersion };
 }
 
 const SNAPSHOT_INTERVAL_MS = 5 * 60_000;

@@ -2,6 +2,10 @@ import { h, api, hhmm, mvr } from '/shared/core.js';
 import { state, render } from '/clinic/app.js';
 
 let data = null;
+
+/** Sign-out: nothing of the last clinic survives on a shared tablet. */
+export function reset() { data = null; }
+
 const mvr2 = (minor) => `MVR ${((minor || 0) / 100).toFixed(2)}`;
 
 async function load() {

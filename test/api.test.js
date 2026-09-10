@@ -119,7 +119,8 @@ test('a travel-flagged patient is never silently demoted', async () => {
   const { body: board } = await get(`/api/clinic/board`);
   const session = board.sessions.find((s) => s.tokens.some((t) => t.flags.includes('travel')));
   if (!session) return; // seed randomness: no traveller in today's queue
-  const traveller = session.tokens.find((t) => t.flags.includes('travel') && t.state !== 'completed');
+  const traveller = session.tokens.find((t) => t.flags.includes('travel') && ['arrived', 'called', 'penalised'].includes(t.state));
+  if (!traveller) return; // no traveller is present to be moved back today
   const seqBefore = traveller.seq;
   await post(`/api/clinic/tokens/${traveller.id}/penalty`, { cause: 'not_present' });
   const { body: after } = await get(`/api/clinic/board`);

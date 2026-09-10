@@ -10,7 +10,7 @@
  * behind `dispatch()` so a provider drops in without touching callers.
  */
 import { db } from '../db.js';
-import { now } from '../lib/clock.js';
+import { now, MINUTE } from '../lib/clock.js';
 import { id, parse } from '../lib/util.js';
 import { hhmm } from '../lib/mvtime.js';
 
@@ -32,6 +32,7 @@ const TEMPLATES = {
   at_risk: (v) => `There's a chance ${v.doctor} won't reach your token today. You can keep waiting, rebook, or cancel for a full refund.`,
   session_cancelled: (v) => `${v.doctor}'s session on ${v.when} has been cancelled. Tap to rebook — any payment is refunded automatically.`,
   no_show: (v) => `You were marked as not attending for token ${v.token}. Tap to rebook.`,
+  reassigned: (v) => `You've been moved to ${v.doctor}. Your token is now ${v.token} (was ${v.previous}), estimated ${v.window}.`,
   travel_confirm: (v) => `Your appointment tomorrow at ${v.when} is on. We'll message you if anything changes.`,
   visit_complete: (v) => `Visit complete. Invoice MVR ${v.total} · ${v.payer} covered MVR ${v.covered} · You paid MVR ${v.paid}.`,
   claim_rejected: (v) => `Your ${v.payer} claim was rejected (${v.reason}). Amount now due: MVR ${v.amount}. The clinic can resubmit — tap to request a review.`,
@@ -54,6 +55,14 @@ const insert = db.prepare(`
   INSERT INTO messages (id, clinic_id, patient_id, token_id, template, channel, body, state, cost_minor, at, urgent)
   VALUES (@id, @clinicId, @patientId, @tokenId, @template, @channel, @body, @state, @cost, @at, @urgent)
 `);
+
+/**
+ * Belt and braces under the materiality engine: the same template to the same
+ * token inside this window is a bug upstream, not a message. Broadcasts are
+ * exempt — a receptionist may legitimately send two in a row.
+ */
+const REPEAT_WINDOW_MS = 5 * MINUTE;
+const recentSame = db.prepare(`SELECT 1 FROM messages WHERE token_id = ? AND template = ? AND state = 'delivered' AND at > ? LIMIT 1`);
 
 const listeners = new Set();
 export function onMessage(fn) {
@@ -96,6 +105,7 @@ export function send({ patient, clinicId, tokenId = null, template, vars = {}, u
   if (!builder) throw new Error(`unknown template: ${template}`);
   const body = builder(vars);
   const at = now();
+  if (tokenId && template !== 'broadcast' && recentSame.get(tokenId, template, at - REPEAT_WINDOW_MS)) return null;
 
   // Transactional queue messages continue on a small overdraft buffer;
   // marketing stops immediately. Running out of credit must never stop a

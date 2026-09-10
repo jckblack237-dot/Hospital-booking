@@ -67,3 +67,57 @@ export function parse(value, fallback = null) {
     return fallback;
   }
 }
+
+// ---------------------------------------------------------------- validation
+// Tiny, explicit validators: a stray keystroke in a "minutes" prompt must come
+// back as a 400 naming the field, never as a NaN bound into SQLite and a 500.
+
+export function num(value, name, { min = -Infinity, max = Infinity, int = false, fallback } = {}) {
+  if (value == null || value === '') {
+    if (fallback !== undefined) return fallback;
+    throw HttpError.badRequest(`${name} is required`, { field: name });
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n) || (int && !Number.isInteger(n)) || n < min || n > max) {
+    const range = max === Infinity ? `at least ${min}` : `between ${min} and ${max}`;
+    throw HttpError.badRequest(`${name} must be ${int ? 'a whole number' : 'a number'} ${range}`, { field: name });
+  }
+  return n;
+}
+
+export function oneOf(value, name, allowed, fallback) {
+  if (value == null || value === '') {
+    if (fallback !== undefined) return fallback;
+    throw HttpError.badRequest(`${name} is required`, { field: name });
+  }
+  if (!allowed.includes(value)) {
+    throw HttpError.badRequest(`${name} must be one of: ${allowed.join(', ')}`, { field: name });
+  }
+  return value;
+}
+
+export function text(value, name, { max = 200, required = false, fallback = null } = {}) {
+  const s = value == null ? '' : String(value).trim();
+  if (!s) {
+    if (required) throw HttpError.badRequest(`${name} is required`, { field: name });
+    return fallback;
+  }
+  if (s.length > max) throw HttpError.badRequest(`${name} must be ${max} characters or fewer`, { field: name });
+  return s;
+}
+
+/**
+ * Canonical phone: '+960 XXX XXXX' for Maldivian numbers, '+<digits>' for
+ * anything foreign. Null when it cannot be a phone number at all. One stored
+ * shape is what lets a receptionist find "7000031" typed without spaces.
+ */
+export function normalisePhone(raw) {
+  let digits = String(raw ?? '').replace(/[^\d+]/g, '');
+  if (digits.startsWith('00')) digits = `+${digits.slice(2)}`;
+  const plus = digits.startsWith('+');
+  digits = digits.replace(/\D/g, '');
+  if (!plus && digits.length === 7) digits = `960${digits}`;
+  if (digits.startsWith('960') && digits.length === 10) return `+960 ${digits.slice(3, 6)} ${digits.slice(6)}`;
+  if (digits.length >= 8 && digits.length <= 15) return `+${digits}`;
+  return null;
+}

@@ -62,15 +62,28 @@ function varsFor(entry, decision, session) {
 }
 
 export function start() {
-  onProjection(({ projection, notifications, session }) => {
-    // (a) realtime — the board and every patient tracking a token in it
-    publish(`session:${projection.sessionId}`, { type: 'projection', ...projection });
-    publish(`clinic:${session.clinic_id}`, { type: 'projection', ...projection });
-    for (const entry of projection.entries) {
-      publish(`patient:${entry.patientId}`, { type: 'token_update', sessionId: projection.sessionId, entry, version: projection.version });
+  // Every delivered message — engine decision, broadcast, reassignment — is
+  // announced from one place, so the Messages tab never needs a reload to
+  // show what a patient was just told.
+  messaging.onMessage(({ patient, ...message }) => {
+    publish(`patient:${patient.id}`, { type: 'message', message });
+    publish(`clinic:${message.clinicId}`, { type: 'message_sent', message: { ...message, patient_name: patient.name } });
+  });
+
+  onProjection(({ projection, notifications, session, trigger, material, changedTokenIds, previousVersion }) => {
+    // (a) realtime — the board and every patient tracking a token in it.
+    // Only when something a person could notice changed: a clock tick is not
+    // a reason to repaint a board.
+    if (material) {
+      const msg = { type: 'projection', ...projection, trigger, changedTokenIds, previousVersion };
+      publish(`session:${projection.sessionId}`, msg);
+      publish(`clinic:${session.clinic_id}`, msg);
+      for (const entry of projection.entries) {
+        publish(`patient:${entry.patientId}`, { type: 'token_update', sessionId: projection.sessionId, entry, version: projection.version });
+      }
     }
 
-    if (projection.nowServing) {
+    if (projection.nowServing && material && changedTokenIds.includes(projection.nowServing.tokenId)) {
       webhooks.emit({
         type: 'queue.token.now_serving', clinicId: session.clinic_id, sessionId: session.id,
         sequence: projection.version,
@@ -89,12 +102,10 @@ export function start() {
       // relaying, so the patient does not get two sets of notifications.
       const template = RULE_TO_TEMPLATE[rule];
       if (template && !token.notify_via_partner_only) {
-        const sent = messaging.send({
+        messaging.send({
           patient, clinicId: session.clinic_id, tokenId: entry.tokenId,
           template, vars: varsFor(entry, decision, session), urgent: decision.urgent,
         });
-        if (sent) publish(`patient:${patient.id}`, { type: 'message', message: sent });
-        if (sent) publish(`clinic:${session.clinic_id}`, { type: 'message_sent', message: { ...sent, patient_name: patient.name } });
       }
 
       // (c) partner webhook
@@ -117,6 +128,19 @@ export function start() {
       }
     }
   });
+}
+
+/**
+ * One heartbeat per second per clinic with a live session. It carries only
+ * the server clock: elapsed timers are derived client-side from `startedAt`,
+ * so a tick costs 60 bytes instead of a 3 KB projection.
+ */
+const liveClinics = db.prepare("SELECT DISTINCT clinic_id FROM sessions WHERE state IN ('running','paused')");
+export function tick() {
+  const serverNow = now();
+  for (const row of liveClinics.all()) {
+    publish(`clinic:${row.clinic_id}`, { type: 'tick', clinicId: row.clinic_id, serverNow });
+  }
 }
 
 /** Session-level partner events, emitted by the outbox relay. */

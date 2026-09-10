@@ -12,6 +12,9 @@ import { state, render, refreshBoard } from '/clinic/app.js';
 let data = null;
 let loadingFor = null;
 
+/** Sign-out: nothing of the last clinic survives on a shared tablet. */
+export function reset() { data = null; loadingFor = null; }
+
 async function load(sessionId) {
   if (loadingFor === sessionId && data) return;
   loadingFor = sessionId;

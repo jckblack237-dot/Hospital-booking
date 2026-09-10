@@ -14,7 +14,7 @@
  */
 import { db } from '../db.js';
 import { now } from '../lib/clock.js';
-import { id, parse } from '../lib/util.js';
+import { id, parse, HttpError } from '../lib/util.js';
 
 export const GST_RATE = 0.08; // GGST. Medical services are exempt; non-medical lines are not.
 
@@ -239,6 +239,12 @@ export const PAYMENT_METHODS = ['bml_card', 'bml_link', 'mfaisaa', 'cash'];
 export function takePayment({ invoiceId, method, amountMinor }) {
   const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId);
   if (!invoice) return null;
+  if (!PAYMENT_METHODS.includes(method)) throw HttpError.badRequest(`method must be one of: ${PAYMENT_METHODS.join(', ')}`, { field: 'method' });
+  const paidSoFar = db.prepare("SELECT COALESCE(SUM(amount_minor),0) AS s FROM payments WHERE invoice_id = ? AND state = 'succeeded'").get(invoiceId).s;
+  const outstanding = Math.max(0, invoice.patient_minor - paidSoFar);
+  if (!Number.isFinite(amountMinor) || amountMinor <= 0 || amountMinor > outstanding) {
+    throw HttpError.badRequest(`amountMinor must be between 1 and ${outstanding} (the amount still due)`, { field: 'amountMinor', outstanding });
+  }
   const paymentId = id('pay');
   const succeeded = method === 'cash' ? true : Math.random() > 0.05;
   db.prepare('INSERT INTO payments (id, invoice_id, clinic_id, method, amount_minor, state, reference, at) VALUES (?,?,?,?,?,?,?,?)')

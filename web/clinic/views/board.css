@@ -1,0 +1,56 @@
+/* Queue board — columns per doctor, one card per token. Carried over verbatim
+   from app.css; the board redesign restyles this file. */
+.board { display: flex; gap: 20px; height: 100%; overflow-x: auto; padding: 18px 24px 22px; align-items: flex-start; scroll-snap-type: x proximity; }
+.col { flex: 0 0 300px; max-height: 100%; display: flex; flex-direction: column; scroll-snap-align: start; position: relative; }
+.col.add { flex-basis: 220px; }
+.col > header { padding: 2px 4px 12px; display: flex; flex-direction: column; gap: 8px; }
+.col .doc { font-weight: 700; font-size: 16px; line-height: 1.25; display: flex; align-items: baseline; gap: 8px; }
+.col .doc .spec { font-weight: 400; font-size: 12.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.col .status { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-2); }
+.col .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex: none; }
+.col .status.ok .dot { background: var(--here); } .col .status.warn .dot { background: var(--called); }
+.col .status.danger .dot { background: var(--back); } .col .status.brand .dot { background: var(--brand); }
+.col .status b { color: var(--text); font-weight: 700; }
+.col .serving { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--text-2); min-height: 32px; }
+.col .serving strong { font-family: var(--num); color: var(--brand-deep); font-size: 14px; }
+.col .list { overflow-y: auto; padding: 4px; margin: 0 -4px; display: flex; flex-direction: column; gap: 10px; min-height: 72px; border-radius: 14px; }
+.col .list.drag-over { background: var(--brand-soft); }
+.col .done-sum { color: var(--text-3); font-size: 13px; cursor: pointer; padding: 6px 8px; min-height: 36px; display: flex; align-items: center; }
+.col .menu { right: 0; top: 30px; --origin: top right; }
+
+.tok { position: relative; border: 1px solid transparent; border-radius: 14px; background: var(--surface); padding: 12px 14px 12px 18px; cursor: grab; box-shadow: var(--shadow-sm); transition: box-shadow .12s, border-color .12s; }
+.tok::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 4px; border-radius: 0 3px 3px 0; background: var(--wait); }
+.tok.s-arrived::before { background: var(--here); }
+.tok.s-called::before { background: var(--called); }
+.tok.s-in_consult::before { background: var(--brand); }
+.tok.s-penalised::before { background: var(--back); }
+.tok.s-in_consult { background: color-mix(in srgb, var(--brand-soft) 45%, var(--surface)); }
+@media (hover: hover) and (pointer: fine) { .tok:hover { box-shadow: var(--shadow); } }
+.tok.open { border-color: var(--border-strong); box-shadow: var(--shadow); cursor: default; }
+.tok.dragging { opacity: .4; }
+.tok.drop-before { box-shadow: 0 -3px 0 0 var(--brand); }
+.tok.s-no_show, .tok.s-cancelled, .tok.s-completed { opacity: .55; cursor: default; box-shadow: none; background: transparent; border-color: var(--border); }
+.tok .l1 { display: flex; align-items: center; gap: 9px; }
+.tok .badge { font-family: var(--num); font-weight: 600; font-size: 12.5px; padding: 2px 7px; border-radius: 7px; background: var(--surface-2); color: var(--text-2); }
+.tok .name { font-weight: 700; font-size: 15px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tok .when { font-family: var(--num); font-size: 13px; color: var(--text-3); }
+.tok .l2 { display: flex; align-items: center; gap: 8px; margin-top: 7px; font-size: 13px; min-height: 28px; }
+.tok .st { font-weight: 700; white-space: nowrap; }
+.tok .st.arrived { color: var(--here); } .tok .st.called { color: var(--called); }
+.tok .st.in_consult { color: var(--brand-deep); } .tok .st.penalised { color: var(--back); }
+.tok .st.booked { color: var(--text-3); font-weight: 400; }
+.tok .flag { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--violet-bg); color: var(--violet); font-weight: 700; white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.tok .flag.warn { background: var(--called-bg); color: var(--called); }
+.tok .l2 .grow { flex: 1; }
+.tok .detail { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text-2); display: flex; gap: 6px 8px; flex-wrap: wrap; align-items: center; }
+.tok .detail .ok { color: var(--here); }
+.tok .detail .unv { color: var(--called); font-weight: 700; }
+.tok .more { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.conf { display: inline-flex; gap: 2px; align-items: flex-end; height: 10px; }
+.conf i { width: 3px; border-radius: 1px; background: var(--border-strong); display: block; }
+.conf i:nth-child(1) { height: 4px; } .conf i:nth-child(2) { height: 7px; } .conf i:nth-child(3) { height: 10px; }
+.conf i.on { background: var(--brand); }
+
+@media (max-width: 860px) {
+  .col { flex-basis: 86vw; }
+}

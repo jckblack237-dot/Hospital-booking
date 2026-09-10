@@ -43,14 +43,19 @@ function logFor(tokenId) {
 
 /**
  * Decide what, if anything, to tell the holder of one token.
+ * @param {object} input
+ * @param {string[]|null} [input.only] restrict to these rules (the ticker may
+ *   only fire time-driven ones; an event recompute may fire any)
  * @returns {null | {rule: string, urgent: boolean, data: object}}
  */
-export function evaluate({ entry, previous, session, now }) {
+export function evaluate({ entry, previous, session, now, only = null }) {
   if (!entry) return null;
   const log = logFor(entry.tokenId);
-  const candidates = [];
+  let candidates = [];
 
-  if (entry.state === 'called') {
+  // Once per call. The engine recomputes every second while a patient walks
+  // from the pharmacy; without this guard each recompute is another SMS.
+  if (entry.state === 'called' && !log.has('called')) {
     candidates.push({ rule: 'called', data: {} });
   }
   if (entry.state === 'penalised' && previous?.state !== 'penalised') {
@@ -107,6 +112,7 @@ export function evaluate({ entry, previous, session, now }) {
     db.prepare('DELETE FROM notification_log WHERE token_id = ? AND rule = ?').run(entry.tokenId, 'paused');
   }
 
+  if (only) candidates = candidates.filter((c) => only.includes(c.rule));
   if (!candidates.length) return null;
 
   // Coalesce: if several rules fire inside one window, send the most important.
@@ -135,4 +141,9 @@ export function evaluate({ entry, previous, session, now }) {
 
 export function clearLog(tokenId) {
   db.prepare('DELETE FROM notification_log WHERE token_id = ?').run(tokenId);
+}
+
+/** Forget one rule so it may fire again — a re-call after a penalty must reach the patient. */
+export function clearRule(tokenId, rule) {
+  db.prepare('DELETE FROM notification_log WHERE token_id = ? AND rule = ?').run(tokenId, rule);
 }

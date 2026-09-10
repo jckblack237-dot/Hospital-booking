@@ -10,7 +10,14 @@ import { WebSocketServer } from 'ws';
 const channels = new Map(); // channel -> Set<ws>
 const sseClients = new Map(); // channel -> Set<res>
 
-export function attach(server) {
+/**
+ * @param {import('node:http').Server} server
+ * @param {{authorize?: (channel: string, token: string|null) => boolean}} opts
+ *   `authorize` decides whether a subscribe may join a channel. Clinic
+ *   channels carry patient names and message bodies; without a staff token
+ *   anyone who guesses the clinic id can watch the evening.
+ */
+export function attach(server, { authorize = () => true } = {}) {
   const wss = new WebSocketServer({ server, path: '/ws' });
 
   wss.on('connection', (ws) => {
@@ -22,13 +29,18 @@ export function attach(server) {
       let msg;
       try { msg = JSON.parse(raw.toString()); } catch { return; }
       if (msg.type === 'subscribe' && Array.isArray(msg.channels)) {
+        const token = typeof msg.token === 'string' ? msg.token : null;
+        const rejected = [];
         for (const ch of msg.channels.slice(0, 40)) {
           if (typeof ch !== 'string') continue;
+          let ok = false;
+          try { ok = authorize(ch, token); } catch { ok = false; }
+          if (!ok) { rejected.push(ch); continue; }
           ws.subscriptions.add(ch);
           if (!channels.has(ch)) channels.set(ch, new Set());
           channels.get(ch).add(ws);
         }
-        ws.send(JSON.stringify({ type: 'subscribed', channels: [...ws.subscriptions] }));
+        ws.send(JSON.stringify({ type: 'subscribed', channels: [...ws.subscriptions], rejected }));
       } else if (msg.type === 'unsubscribe' && Array.isArray(msg.channels)) {
         for (const ch of msg.channels) {
           ws.subscriptions.delete(ch);

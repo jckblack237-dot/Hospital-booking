@@ -50,85 +50,94 @@ function drawDuration(doctor, token) {
 export function tick() {
   const at = now();
   for (const [sessionId, cfg] of running) {
-    const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
-    if (!session || session.state === 'ended' || session.state === 'cancelled') {
-      running.delete(sessionId);
-      continue;
+    // A refused transition on one doctor's session must not stall the others.
+    try {
+      step(sessionId, cfg, at);
+    } catch (err) {
+      console.error(`[simulator] ${sessionId}`, err.detail ?? err.message);
     }
-    const doctor = db.prepare('SELECT * FROM doctors WHERE id = ?').get(session.doctor_id);
-
-    if (session.state === 'scheduled') {
-      if (at >= session.scheduled_start + cfg.startLateMinutes * MINUTE) {
-        if (cfg.startLateMinutes > 5) queue.delaySession(sessionId, cfg.startLateMinutes);
-        queue.startSession(sessionId, 'simulator');
-      }
-      continue;
-    }
-
-    if (session.state === 'paused') {
-      const pause = db.prepare('SELECT * FROM blackouts WHERE session_id = ? AND open_ended = 1 ORDER BY starts_at DESC LIMIT 1').get(sessionId);
-      if (!pause || at >= (pause.expected_resume_at ?? at)) queue.resumeSession(sessionId);
-      continue;
-    }
-
-    const inConsult = db.prepare("SELECT * FROM tokens WHERE session_id = ? AND state = 'in_consult'").get(sessionId);
-
-    if (inConsult) {
-      if (cfg.endAt == null) {
-        cfg.endAt = (inConsult.started_at ?? at) + drawDuration(doctor, inConsult);
-      }
-      if (at >= cfg.endAt) {
-        queue.endConsult(inConsult.id);
-        cfg.endAt = null;
-        cfg.freeUntil = at + world.turnoverMs();
-      }
-      continue;
-    }
-
-    if (cfg.freeUntil && at < cfg.freeUntil) continue;
-
-    // Prayer blackouts are honoured by the projector; the simulated doctor
-    // honours them too, otherwise the board and reality diverge.
-    const blocked = db.prepare(`SELECT 1 FROM blackouts WHERE session_id = ? AND starts_at <= ?
-                                AND COALESCE(ends_at, expected_resume_at) > ?`).get(sessionId, at, at);
-    if (blocked) continue;
-
-    // Patients drift in ahead of their turn, which is what makes arrival-to-seen
-    // wait times measurable at all.
-    for (const waiting of db.prepare(`SELECT t.id, t.arrived_at FROM tokens t WHERE t.session_id = ?
-                                      AND t.state = 'booked' AND t.arrived_at IS NULL ORDER BY t.seq LIMIT 3`).all(sessionId)) {
-      if (Math.random() < 0.35) queue.checkIn(waiting.id);
-    }
-
-    const next = db.prepare(`SELECT * FROM tokens WHERE session_id = ?
-                             AND state IN ('booked','arrived','called','penalised') ORDER BY seq LIMIT 1`).get(sessionId);
-    if (!next) {
-      if (at > session.scheduled_end) queue.endSession(sessionId);
-      continue;
-    }
-
-    if (Math.random() < cfg.pauseChance) {
-      queue.pauseSession(sessionId, { kind: 'emergency', expectedMinutes: 8 + Math.round(Math.random() * 12) });
-      continue;
-    }
-
-    if (next.state !== 'called') {
-      queue.callToken(next.id);
-      cfg.calledAt = at;
-      // A patient who is not in the building yet stays called, so the real
-      // grace-period and penalty path gets exercised. Everyone else walks
-      // straight in — splitting call and start across ticks would add a
-      // per-patient delay the estimator cannot see, and the optimism-bias
-      // metric would report that artefact as a model defect.
-      cfg.absent = Math.random() < cfg.noShowChance && !next.arrived_at && !next.on_my_way;
-      if (cfg.absent) continue;
-    } else if (cfg.absent && !next.arrived_at && !next.on_my_way) {
-      continue;
-    }
-
-    queue.startConsult(next.id);
-    cfg.absent = false;
-    cfg.endAt = null;
   }
   return { sessions: running.size, speed: getSpeed(), at };
+}
+
+function step(sessionId, cfg, at) {
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
+  if (!session || session.state === 'ended' || session.state === 'cancelled') {
+    running.delete(sessionId);
+    return;
+  }
+  const doctor = db.prepare('SELECT * FROM doctors WHERE id = ?').get(session.doctor_id);
+
+  if (session.state === 'scheduled') {
+    if (at >= session.scheduled_start + cfg.startLateMinutes * MINUTE) {
+      if (cfg.startLateMinutes > 5) queue.delaySession(sessionId, cfg.startLateMinutes);
+      queue.startSession(sessionId, 'simulator');
+    }
+    return;
+  }
+
+  if (session.state === 'paused') {
+    const pause = db.prepare('SELECT * FROM blackouts WHERE session_id = ? AND open_ended = 1 ORDER BY starts_at DESC LIMIT 1').get(sessionId);
+    if (!pause || at >= (pause.expected_resume_at ?? at)) queue.resumeSession(sessionId);
+    return;
+  }
+
+  const inConsult = db.prepare("SELECT * FROM tokens WHERE session_id = ? AND state = 'in_consult'").get(sessionId);
+
+  if (inConsult) {
+    if (cfg.endAt == null) {
+      cfg.endAt = (inConsult.started_at ?? at) + drawDuration(doctor, inConsult);
+    }
+    if (at >= cfg.endAt) {
+      queue.endConsult(inConsult.id);
+      cfg.endAt = null;
+      cfg.freeUntil = at + world.turnoverMs();
+    }
+    return;
+  }
+
+  if (cfg.freeUntil && at < cfg.freeUntil) return;
+
+  // Prayer blackouts are honoured by the projector; the simulated doctor
+  // honours them too, otherwise the board and reality diverge.
+  const blocked = db.prepare(`SELECT 1 FROM blackouts WHERE session_id = ? AND starts_at <= ?
+                              AND COALESCE(ends_at, expected_resume_at) > ?`).get(sessionId, at, at);
+  if (blocked) return;
+
+  // Patients drift in ahead of their turn, which is what makes arrival-to-seen
+  // wait times measurable at all.
+  for (const waiting of db.prepare(`SELECT t.id, t.arrived_at FROM tokens t WHERE t.session_id = ?
+                                    AND t.state = 'booked' AND t.arrived_at IS NULL ORDER BY t.seq LIMIT 3`).all(sessionId)) {
+    if (Math.random() < 0.35) queue.checkIn(waiting.id);
+  }
+
+  const next = db.prepare(`SELECT * FROM tokens WHERE session_id = ?
+                           AND state IN ('booked','arrived','called','penalised') ORDER BY seq LIMIT 1`).get(sessionId);
+  if (!next) {
+    if (at > session.scheduled_end) queue.endSession(sessionId);
+    return;
+  }
+
+  if (Math.random() < cfg.pauseChance) {
+    queue.pauseSession(sessionId, { kind: 'emergency', expectedMinutes: 8 + Math.round(Math.random() * 12) });
+    return;
+  }
+
+  if (next.state !== 'called') {
+    queue.callToken(next.id);
+    cfg.calledAt = at;
+    // A patient who is not in the building yet stays called, so the real
+    // grace-period and penalty path gets exercised. Everyone else walks
+    // straight in — splitting call and start across ticks would add a
+    // per-patient delay the estimator cannot see, and the optimism-bias
+    // metric would report that artefact as a model defect.
+    cfg.absent = Math.random() < cfg.noShowChance && !next.arrived_at && !next.on_my_way;
+    if (cfg.absent) return;
+  } else if (cfg.absent && !next.arrived_at && !next.on_my_way) {
+    return;
+  }
+
+  queue.startConsult(next.id);
+  cfg.absent = false;
+  cfg.endAt = null;
 }

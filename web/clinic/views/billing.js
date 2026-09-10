@@ -3,6 +3,9 @@ import { state, render } from '/clinic/app.js';
 
 let data = null;
 
+/** Sign-out: nothing of the last clinic survives on a shared tablet. */
+export function reset() { data = null; }
+
 async function load() {
   data = await api(`/api/clinic/billing`);
   render();

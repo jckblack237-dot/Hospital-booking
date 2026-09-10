@@ -81,7 +81,7 @@ export function boot() {
   }
   clock.setTime(Math.max(...onDay.map((s) => s.scheduled_end)) + 5 * MINUTE);
   for (const s of onDay) {
-    if (s.state !== 'ended' && s.state !== 'cancelled') queue.endSession(s.id);
+    if (s.state !== 'ended' && s.state !== 'cancelled') queue.endSession(s.id, { system: true });
   }
   startEvening(day >= today ? nextWorkingDay(day) : today);
 }
@@ -104,7 +104,7 @@ export function tick() {
   rollAt = null;
   for (const s of live) {
     simulator.disable(s.id);
-    queue.endSession(s.id);
+    queue.endSession(s.id, { system: true });
   }
   startEvening(nextWorkingDay(mvStartOfDay(lastEnd)));
 }

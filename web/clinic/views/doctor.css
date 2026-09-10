@@ -1,0 +1,8 @@
+/* Doctor view — one patient, two buttons. Carried over verbatim from app.css. */
+.doctor-shell { max-width: 640px; margin: 0 auto; }
+.doctor-card { text-align: center; padding: 30px 24px; }
+.doctor-card .token-big { font-family: var(--num); font-size: 48px; font-weight: 600; letter-spacing: -.03em; color: var(--brand-deep); }
+.doctor-card .timer { font-family: var(--num); font-variant-numeric: tabular-nums; font-size: 30px; font-weight: 600; margin: 16px 0; }
+.doctor-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+.doctor-actions .btn { min-height: 64px; padding: 20px; font-size: 16px; }
+.doctor-secondary { display: flex; gap: 8px; justify-content: center; margin-top: 12px; flex-wrap: wrap; }

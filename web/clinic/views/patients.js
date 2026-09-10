@@ -5,6 +5,9 @@ let results = [];
 let detail = null;
 let query = '';
 
+/** Sign-out: nothing of the last clinic survives on a shared tablet. */
+export function reset() { results = []; detail = null; query = ''; }
+
 async function search(q) {
   query = q;
   const data = await api(`/api/clinic/patients?q=${encodeURIComponent(q)}`);

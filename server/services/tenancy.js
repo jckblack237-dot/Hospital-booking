@@ -21,9 +21,12 @@ import { db } from '../db.js';
 import { now } from '../lib/clock.js';
 import { id, HttpError } from '../lib/util.js';
 
+// Sign-in lifetimes are REAL time, never the demo clock: the autopilot jumps
+// the virtual clock a day forward every evening, and that must not sign out
+// every tablet in the building.
 const SESSION_TTL_MS = 14 * 60 * 60 * 1000; // one working day, with margin
 const MAX_FAILURES = 5;
-const LOCKOUT_MS = 5 * 60 * 1000;            // real time, not the demo clock
+const LOCKOUT_MS = 5 * 60 * 1000;
 
 // ------------------------------------------------------------------ passwords
 export function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -88,11 +91,11 @@ export function login({ slug = null, username, password, ip }) {
   db.prepare('DELETE FROM login_attempts WHERE key = ?').run(key);
 
   const token = crypto.randomBytes(24).toString('base64url');
-  const at = now();
+  const at = Date.now();
   const home = db.prepare('SELECT id, name, island, atoll, slug FROM clinics WHERE id = ?').get(staff.clinic_id);
   db.prepare('INSERT INTO staff_sessions (token, staff_id, clinic_id, created_at, expires_at, last_seen_at) VALUES (?,?,?,?,?,?)')
     .run(token, staff.id, home.id, at, at + SESSION_TTL_MS, at);
-  db.prepare('UPDATE staff SET last_login_at = ? WHERE id = ?').run(at, staff.id);
+  db.prepare('UPDATE staff SET last_login_at = ? WHERE id = ?').run(now(), staff.id);
   return {
     token,
     staff: { id: staff.id, name: staff.name, role: staff.role, username: staff.username, mustChangePassword: !!staff.must_change_password },
@@ -104,17 +107,24 @@ export function logout(token) {
   db.prepare('DELETE FROM staff_sessions WHERE token = ?').run(token);
 }
 
+/** The live sign-in behind a bearer token, or null. One check for HTTP and the socket alike. */
+export function sessionForToken(token) {
+  const session = token ? db.prepare('SELECT * FROM staff_sessions WHERE token = ?').get(token) : null;
+  if (!session || session.expires_at < Date.now()) return null;
+  const staff = db.prepare('SELECT id, name, role, username, clinic_id, active FROM staff WHERE id = ?').get(session.staff_id);
+  if (!staff || !staff.active || staff.clinic_id !== session.clinic_id) return null;
+  return { clinicId: session.clinic_id, staff, token };
+}
+
 /** Express middleware: attaches req.tenant or rejects. */
 export function requireStaff(req, res, next) {
   try {
     const header = req.get('authorization') || '';
     const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-    const session = token ? db.prepare('SELECT * FROM staff_sessions WHERE token = ?').get(token) : null;
-    if (!session || session.expires_at < now()) throw HttpError.unauthorized('Please sign in');
-    const staff = db.prepare('SELECT id, name, role, username, clinic_id, active FROM staff WHERE id = ?').get(session.staff_id);
-    if (!staff || !staff.active || staff.clinic_id !== session.clinic_id) throw HttpError.unauthorized('Please sign in');
-    db.prepare('UPDATE staff_sessions SET last_seen_at = ? WHERE token = ?').run(now(), token);
-    req.tenant = { clinicId: session.clinic_id, staff, token };
+    const tenant = sessionForToken(token);
+    if (!tenant) throw HttpError.unauthorized('Please sign in');
+    db.prepare('UPDATE staff_sessions SET last_seen_at = ? WHERE token = ?').run(Date.now(), token);
+    req.tenant = tenant;
     next();
   } catch (err) {
     next(err);

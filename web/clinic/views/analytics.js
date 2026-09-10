@@ -4,6 +4,9 @@ import { state, render } from '/clinic/app.js';
 let data = null;
 let days = 30;
 
+/** Sign-out: nothing of the last clinic survives on a shared tablet. */
+export function reset() { data = null; days = 30; }
+
 async function load() {
   data = await api(`/api/clinic/analytics?days=${days}`);
   render();

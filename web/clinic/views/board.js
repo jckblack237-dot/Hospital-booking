@@ -5,6 +5,9 @@ let dragging = null;   // token id mid-drag — suppresses re-render until drop
 let openCard = null;   // token id whose secondary actions are showing
 let openMenu = null;   // session id whose "…" menu is showing
 
+/** Sign-out: nothing of the last clinic survives on a shared tablet. */
+export function reset() { dragging = null; openCard = null; openMenu = null; }
+
 export function boardOnMessage(msg) {
   if (dragging) return;
   if (msg.type === 'projection') {
