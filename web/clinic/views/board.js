@@ -807,7 +807,7 @@ function expandedContent(t, ctx) {
   switch (t.state) {
     case 'booked': row.push(b('Call', (el) => tokenAct(el, t, 'call')), b('Did not attend', (el) => tokenAct(el, t, 'no-show'))); break;
     case 'arrived': row.push(b('Start', (el) => tokenAct(el, t, 'start')), b('Move back', (el) => tokenAct(el, t, 'penalty'))); break;
-    case 'called': row.push(b('Still here', (el) => tokenAct(el, t, 'call')), b('Move back', (el) => tokenAct(el, t, 'penalty'))); break;
+    case 'called': row.push(b('Move back', (el) => tokenAct(el, t, 'penalty')), b('Did not attend', (el) => tokenAct(el, t, 'no-show'))); break; // Start is the row's own button; the server has no re-call
     case 'penalised': row.push(b('Undo move-back', (el) => tokenAct(el, t, 'revoke-penalty')), b('Did not attend', (el) => tokenAct(el, t, 'no-show'))); break;
     case 'in_consult': row.push(b('+10 min', (el) => tokenAct(el, t, 'extend', { minutes: 10 })), b('Note…', (el, e) => openCardSheet(t.id, el, 'note', { instant: e.detail === 0 }))); break;
     default: break;
@@ -1028,7 +1028,7 @@ function feedback(t, action, r, fromSessionId, body) {
     case 'reorder': undoToast('Queue reordered', 'Undo', undo('reorder', body.undoWith || {})); break;
     case 'extend': toast(`${body.minutes ?? 10} min added for ${d}`); break;
     case 'reinstate': toast(`${d} back in the queue`); break;
-    default: break; // Call, Start, Still here, revoke-penalty, note: the card is the feedback
+    default: break; // Call, Start, revoke-penalty, note: the card is the feedback
   }
 }
 
@@ -1144,7 +1144,7 @@ function openCardSheet(tokenId, anchorEl = null, sub = null, { instant = false }
     case 'booked': rows.push({ label: 'Check in', icon: '●', onClick: act('checkin') }, { label: 'Call', icon: '◐', onClick: act('call') }, { label: 'Start', icon: '▶', onClick: act('start') }, moveRow, editRow, noShowRow, cancelRow); break;
     case 'arrived': rows.push({ label: 'Start', icon: '▶', onClick: act('start') }, { label: 'Move back', icon: '↩', onClick: act('penalty') }, moveRow, editRow, noShowRow, cancelRow); break;
     case 'penalised': rows.push({ label: 'Start', icon: '▶', onClick: act('start') }, { label: 'Undo move-back', icon: '↩', onClick: act('revoke-penalty') }, moveRow, editRow, noShowRow, cancelRow); break;
-    case 'called': rows.push({ label: 'Still here', icon: '◐', onClick: act('call') }, { label: 'Start', icon: '▶', onClick: act('start') }, { label: 'Move back', icon: '↩', onClick: act('penalty') }, moveRow, editRow, noShowRow, cancelRow); break;
+    case 'called': rows.push({ label: 'Start', icon: '▶', onClick: act('start') }, { label: 'Move back', icon: '↩', onClick: act('penalty') }, moveRow, editRow, noShowRow, cancelRow); break;
     case 'in_consult': rows.push({ label: '+10 min', icon: '+', onClick: act('extend', { minutes: 10 }) }, noteRow, { label: 'End without calling next', icon: '■', onClick: act('end', { callNext: false }) }, editRow); break;
     default: rows.push({ label: 'Reinstate', icon: '↺', onClick: act('reinstate') }, editRow); break;
   }
@@ -1373,8 +1373,11 @@ function requestToast(msg) {
       const ss = sessionOf(msg.sessionId);
       if (!ss) return;
       jumpTo(ss.id);
+      // The doctor asked for a particular patient: call them while they are still waiting, else the column's next thing.
+      const asked = msg.tokenId ? tokenOf(msg.tokenId) : null;
       const p = primaryOf(ss);
-      if (p?.kind === 'token' && p.action === 'call') tokenAct(null, p.token, 'call');
+      if (asked && WAITING.has(asked.state) && asked.state !== 'called') tokenAct(null, asked, 'call');
+      else if (p?.kind === 'token' && p.action === 'call') tokenAct(null, p.token, 'call');
     } },
   });
 }
@@ -1391,9 +1394,13 @@ function soonToasts(t) {
       const left = tok.called_at + graceMs() - t;
       if (left <= 0 || left >= MOVE_BACK_SOON_MS || u.soonToasted.has(tok.id) || !canAct()) continue;
       u.soonToasted.add(tok.id);
+      // The server refuses a second call on a called token and a Start while someone is in the room, so the one tap
+      // is Start when the room is free and Show (the card, expanded: Move back / Did not attend) when it is not.
+      const roomFree = () => !(sessionOf(tok.session_id)?.tokens ?? []).some((x) => x.state === 'in_consult');
+      const show = () => jumpTo(tok.session_id, { tokenId: tok.id, expand: true });
       toast(`${tok.display} still not in the room · moves back in ${mmss(left)}`, {
         kind: 'warn', duration: Math.max(1500, left),
-        action: { label: 'Still here', onClick: () => { const x = tokenOf(tok.id); if (x && x.state === 'called') tokenAct(null, x, 'call'); } },
+        action: { label: roomFree() ? 'Start' : 'Show', onClick: () => { const x = tokenOf(tok.id); if (x && x.state === 'called' && roomFree()) tokenAct(null, x, 'start'); else show(); } },
       });
     }
   }
