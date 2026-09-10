@@ -704,8 +704,9 @@ function updateCard(node, t, ctx) {
     const sig = `${ctx.completed}|${over ? 1 : 0}|${ctx.narrow ? 1 : 0}`;
     if (node._sig !== sig) {
       node._sig = sig;
-      r.status.replaceChildren(h('span.meta', {}, ctx.narrow ? `${ordinal(ctx.completed + 1)} today` : `In the room · ${ordinal(ctx.completed + 1)} today`),
-        over ? h('span.over', {}, ' · over by ', h('span.num', { dataset: { tick: '', mode: 'over', from: String(startedAt + Math.max(0, ns?.residualMinutes ?? 0) * 60000) } })) : null);
+      // replaceChildren() stringifies a null argument into a "null" text node: filter, never pass nulls.
+      r.status.replaceChildren(...[h('span.meta', {}, ctx.narrow ? `${ordinal(ctx.completed + 1)} today` : `In the room · ${ordinal(ctx.completed + 1)} today`),
+        over ? h('span.over', {}, ' · over by ', h('span.num', { dataset: { tick: '', mode: 'over', from: String(startedAt + Math.max(0, ns?.residualMinutes ?? 0) * 60000) } })) : null].filter(Boolean));
     }
   } else if (tier === 'present') {
     setText(r.glyph, GLYPH[t.state] || '');
@@ -741,10 +742,11 @@ function updateCard(node, t, ctx) {
   const key = act ? `${act.action}|${act.label}` : '';
   if (node._actionKey !== key) {
     node._actionKey = key;
-    r.action.replaceChildren(act ? h(`button.btn${tier === 'away' ? '.sm' : ''}`, {
+    if (!act) r.action.replaceChildren();
+    else r.action.replaceChildren(h(`button.btn${tier === 'away' ? '.sm' : ''}`, {
       type: 'button', dataset: { action: act.action },
       onClick: (e) => { e.stopPropagation(); tokenAct(e.currentTarget, e.currentTarget._token || t, act.action, act.body); },
-    }, act.label) : null);
+    }, act.label));
   }
   const btn = r.action.firstElementChild;
   if (btn) { btn.classList.toggle('primary', isPrimary); btn.classList.toggle('ghost', !isPrimary); btn._token = t; }
@@ -1346,8 +1348,8 @@ function patchDoneSheet() {
       const sig = `${t.state}|${t.ended_at}|${inv?.state}|${closed}`;
       if (node._sig === sig) return;
       node._sig = sig;
-      node.replaceChildren(h('span.glyph', { 'aria-hidden': true }, GLYPH[t.state] || ''), h('span.badge.num', {}, t.display),
-        h('span.txt', {}, h('bdi.name', { dir: 'auto' }, t.patient_name), h('span.sub', {}, outcome)), chip, action);
+      node.replaceChildren(...[h('span.glyph', { 'aria-hidden': true }, GLYPH[t.state] || ''), h('span.badge.num', {}, t.display),
+        h('span.txt', {}, h('bdi.name', { dir: 'auto' }, t.patient_name), h('span.sub', {}, outcome)), chip, action].filter(Boolean));
     },
     enter: () => {},
     exit: () => Promise.resolve(),
